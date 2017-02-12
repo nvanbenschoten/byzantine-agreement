@@ -25,7 +25,7 @@ std::vector<std::string> get_hosts(const std::string hostfile) {
 // validate the commander_id flag.
 void validate_commander_id(std::vector<std::string>& hosts, int commander_id) {
     // make sure the commander_id is valid
-    if (commander_id < 0 || commander_id >= hosts.size()) {
+    if (commander_id < 0 || (size_t) commander_id >= hosts.size()) {
         std::cout << "commander_id " << commander_id
                   << " does not reference a process" << std::endl;
         exit(-5);
@@ -40,7 +40,7 @@ void validate_faulty_count(const std::vector<std::string>& hosts, int faulty) {
         std::cout << "faulty count must be non-negative" << std::endl;
         exit(-5);
     }
-    if (faulty + 2 > hosts.size()) {
+    if ((size_t) faulty + 2 > hosts.size()) {
         std::cout << "process count must be no less than (faulty + 2)" << std::endl;
         exit(-5);
     }
