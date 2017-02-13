@@ -1,7 +1,12 @@
 #ifndef UDP_CONN_H_
 #define UDP_CONN_H_
 
+#include <arpa/inet.h>
+#include <atomic>
+#include <functional>
+#include <iostream>
 #include <limits.h>
+#include <memory> 
 #include <netdb.h> 
 #include <netinet/in.h>
 #include <strings.h>
@@ -9,139 +14,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <string>
+#include <thread>
 
 #include "net_exception.h"
 
-typedef int Socket;
-typedef struct sockaddr_in SocketAddress;
-
-// creates a UDP socket or throws an exception on error.
-Socket create_socket() {
-    // create the socket
-    Socket sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        throw SocketException();
-    }
-
-    // resuse the socket immediately after it is killed
-    int optval = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 
-                   (const void *)&optval, sizeof(int))) {
-        throw SocketException();
-    }
-
-    return sockfd;
-}
-
-class UdpClient {
-    Socket socket;
-    SocketAddress remote_address;
-public:
-    UdpClient(std::string hostname, int port) :
-        socket(create_socket()), 
-        remote_address(create_remote_address(hostname, port))
-        {};
-
-    ~UdpClient() { close(socket); };
-
-    void send(const char* buf, size_t size) {
-    //     /* send the message to the server */
-    //     serverlen = sizeof(serveraddr);
-    //     n = sendto(socket, buf, size, 0, &serveraddr, serverlen);
-    //     if (n < 0) 
-    //         error("ERROR in sendto");
-    }
-private:
-    SocketAddress create_remote_address(std::string hostname, int port) {
-        // get the remote server's DNS entry
-        struct hostent* server = gethostbyname(hostname.c_str());
-        if (server == nullptr) {
-            throw HostNotFoundException(hostname);
-        }
-
-        // build the server's Internet address
-        SocketAddress address;
-        bzero((char *) &address, sizeof(address));
-        address.sin_family = AF_INET;
-        bcopy((char *) server->h_addr, 
-              (char *) &address.sin_addr.s_addr, server->h_length);
-        address.sin_port = htons(port);
-        return address;
-    }
-};
-
-class UdpServer {
-    Socket socket;
-public:
-    UdpServer(int port) :
-        socket(create_socket())
-        {
-            SocketAddress server_address = create_server_address(port);
-
-            // associate the parent socket with a port
-            if (bind(socket, (struct sockaddr *) &server_address, 
-                sizeof(server_address)) < 0) {
-                throw BindException();
-            }
-
-
-            // int clientlen; /* byte size of client's address */
-            // struct sockaddr_in clientaddr; /* client addr */
-            // struct hostent *hostp; /* client host info */
-            // char buf[BUFSIZE]; /* message buf */
-            // char *hostaddrp; /* dotted decimal host addr string */
-            // int optval; /* flag value for setsockopt */
-            // int n; /* message byte size */
-
-
-            // /* 
-            // * main loop: wait for a datagram, then echo it
-            // */
-            // clientlen = sizeof(clientaddr);
-            // while (1) {
-
-            //     /*
-            //     * recvfrom: receive a UDP datagram from a client
-            //     */
-            //     bzero(buf, BUFSIZE);
-            //     n = recvfrom(sockfd, buf, BUFSIZE, 0,
-            //         (struct sockaddr *) &clientaddr, &clientlen);
-            //     if (n < 0)
-            //     error("ERROR in recvfrom");
-
-            //     /* 
-            //     * gethostbyaddr: determine who sent the datagram
-            //     */
-            //     hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-            //             sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-            //     if (hostp == NULL)
-            //     error("ERROR on gethostbyaddr");
-            //     hostaddrp = inet_ntoa(clientaddr.sin_addr);
-            //     if (hostaddrp == NULL)
-            //     error("ERROR on inet_ntoa\n");
-            //     printf("server received datagram from %s (%s)\n", 
-            //     hostp->h_name, hostaddrp);
-            //     printf("server received %d/%d bytes: %s\n", strlen(buf), n, buf);
-                
-            //     /* 
-            //     * sendto: echo the input back to the client 
-            //     */
-            //     n = sendto(sockfd, buf, strlen(buf), 0, 
-            //         (struct sockaddr *) &clientaddr, clientlen);
-            //     if (n < 0) 
-            //     error("ERROR in sendto");
-            // }
-        };
-private:
-    SocketAddress create_server_address(int port) {
-        SocketAddress address;
-        bzero((char *) &address, sizeof(address));
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_ANY);
-        address.sin_port = htons((unsigned short) port);
-        return address;
-    };
-};
+#define BUFSIZE 1024
 
 // HOST_NAME_MAX is recommended by POSIX, but not required.
 // FreeBSD and OSX (as of 10.9) are known to not define it.
@@ -150,10 +27,68 @@ private:
 #define HOST_NAME_MAX 255
 #endif
 
-std::string get_hostname() {
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, HOST_NAME_MAX);
-    return std::string(hostname);
-}
+
+typedef int Socket;
+
+
+Socket create_socket();
+std::string get_hostname();
+
+
+class SocketAddress {
+ public:
+	SocketAddress(struct sockaddr_in addr) : addr_(addr) {};
+	SocketAddress(std::string host, int port);
+
+	std::string hostname();
+
+	const struct sockaddr* addr() { return (struct sockaddr*) &addr_; };
+	const socklen_t addr_len() { return sizeof(addr_); };
+private:
+	struct sockaddr_in addr_;
+};
+
+
+class UdpClient {
+ public:
+	UdpClient(std::string hostname, int port) :
+		sockfd_(create_socket()), 
+		remote_address_(hostname, port) {};
+
+	UdpClient(struct sockaddr_in addr) :
+		sockfd_(create_socket()), 
+		remote_address_(addr) {};
+
+	~UdpClient() { close(sockfd_); };
+
+	// sends the message to the remote server.
+	void send(const char* buf, size_t size);
+
+	// returns the hostname of the remote server.
+	std::string remote_hostname() { return remote_address_.hostname(); };
+ private:
+	Socket sockfd_;
+	SocketAddress remote_address_;
+};
+
+
+typedef std::function<void (UdpClient, char*)> on_receive;
+
+class UdpServer {
+ public:
+	UdpServer(int port);
+	~UdpServer();
+
+	// listen forks a new thread to listen and call the provided
+	// callback on.
+	void listen(on_receive f);
+
+	void respond(const SocketAddress client, const char* buf);
+ private:
+	Socket sockfd_;
+
+	std::unique_ptr<std::thread> server_thread_;
+	std::atomic<bool> running_;
+};
 
 #endif
