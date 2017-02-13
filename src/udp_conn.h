@@ -2,17 +2,17 @@
 #define UDP_CONN_H_
 
 #include <arpa/inet.h>
+#include <limits.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <strings.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <atomic>
 #include <functional>
 #include <iostream>
-#include <limits.h>
-#include <memory> 
-#include <netdb.h> 
-#include <netinet/in.h>
-#include <strings.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -27,68 +27,64 @@
 #define HOST_NAME_MAX 255
 #endif
 
-
 typedef int Socket;
-
 
 Socket create_socket();
 std::string get_hostname();
 
-
 class SocketAddress {
  public:
-	SocketAddress(struct sockaddr_in addr) : addr_(addr) {};
-	SocketAddress(std::string host, int port);
+  SocketAddress(struct sockaddr_in addr) : addr_(addr){};
+  SocketAddress(std::string host, int port);
 
-	std::string hostname();
+  std::string hostname();
 
-	const struct sockaddr* addr() { return (struct sockaddr*) &addr_; };
-	const socklen_t addr_len() { return sizeof(addr_); };
-private:
-	struct sockaddr_in addr_;
+  const struct sockaddr* addr() { return (struct sockaddr*)&addr_; };
+  const socklen_t addr_len() { return sizeof(addr_); };
+
+ private:
+  struct sockaddr_in addr_;
 };
-
 
 class UdpClient {
  public:
-	UdpClient(std::string hostname, int port) :
-		sockfd_(create_socket()), 
-		remote_address_(hostname, port) {};
+  UdpClient(std::string hostname, int port)
+      : sockfd_(create_socket()), remote_address_(hostname, port){};
 
-	UdpClient(struct sockaddr_in addr) :
-		sockfd_(create_socket()), 
-		remote_address_(addr) {};
+  UdpClient(struct sockaddr_in addr)
+      : sockfd_(create_socket()), remote_address_(addr){};
 
-	~UdpClient() { close(sockfd_); };
+  ~UdpClient() { close(sockfd_); };
 
-	// sends the message to the remote server.
-	void send(const char* buf, size_t size);
+  // sends the message to the remote server.
+  void send(const char* buf, size_t size);
 
-	// returns the hostname of the remote server.
-	std::string remote_hostname() { return remote_address_.hostname(); };
+  // returns the hostname of the remote server.
+  std::string remote_hostname() { return remote_address_.hostname(); };
+
  private:
-	Socket sockfd_;
-	SocketAddress remote_address_;
+  Socket sockfd_;
+  SocketAddress remote_address_;
 };
 
-
-typedef std::function<void (UdpClient, char*)> on_receive;
+typedef std::function<void(UdpClient, char*)> on_receive;
 
 class UdpServer {
  public:
-	UdpServer(int port);
-	~UdpServer();
+  UdpServer(int port);
+  ~UdpServer();
 
-	// listen forks a new thread to listen and call the provided
-	// callback on.
-	void listen(on_receive f);
+  // listen forks a new thread to listen and call the provided
+  // callback on.
+  void listen(on_receive f);
 
-	void respond(const SocketAddress client, const char* buf);
+  void respond(const SocketAddress client, const char* buf);
+
  private:
-	Socket sockfd_;
+  Socket sockfd_;
 
-	std::unique_ptr<std::thread> server_thread_;
-	std::atomic<bool> running_;
+  std::unique_ptr<std::thread> server_thread_;
+  std::atomic<bool> running_;
 };
 
 #endif

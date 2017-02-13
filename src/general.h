@@ -12,13 +12,15 @@
 
 class General {
  public:
-  General(std::vector<std::string> hosts, int port, int faulty) :
-    hosts_(hosts), port_(port), faulty_(faulty)//, server_(port)
-    {
-      for (auto const& host : hosts_) {
-        clients_.emplace(host, std::make_unique<UdpClient>(host, port));
-      }
+  General(std::vector<std::string> hosts, int port, int faulty)
+      : hosts_(hosts),
+        port_(port),
+        faulty_(faulty)  //, server_(port)
+  {
+    for (auto const& host : hosts_) {
+      clients_.emplace(host, std::make_unique<UdpClient>(host, port));
     }
+  }
 
   virtual ~General() = default;
 
@@ -26,6 +28,7 @@ class General {
 
   void send_message(UdpClient client, Order order);
   void send_ack(UdpClient client);
+
  protected:
   std::vector<std::string> hosts_;
   int port_;
@@ -40,22 +43,23 @@ class General {
 
 class Commander : public General {
  public:
-  Commander(std::vector<std::string> hosts, int port, int faulty, Order order) :
-    General(hosts, port, faulty)/*, order_(order)*/ { }
-  
+  Commander(std::vector<std::string> hosts, int port, int faulty, Order order)
+      : General(hosts, port, faulty) /*, order_(order)*/ {}
+
   Order decide() {
-    char* p = (char*) "Hello";
+    char* p = (char*)"Hello";
     clients_[hosts_[0]]->send(p, 5);
     return Order::RETREAT;
   };
-private:
+
+ private:
   // Order order_;
 };
 
 class Lieutenant : public General {
  public:
-  Lieutenant(std::vector<std::string> hosts, int port, int faulty) :
-    General(hosts, port, faulty), server_(port) { }
+  Lieutenant(std::vector<std::string> hosts, int port, int faulty)
+      : General(hosts, port, faulty), server_(port) {}
 
   Order decide() {
     int a = 5;
@@ -66,12 +70,14 @@ class Lieutenant : public General {
       printf("server received bytes: %s\n", buf);
       a--;
     });
-    while (a > 0) {};
+    while (a > 0) {
+    };
     return Order::RETREAT;
   };
+
  private:
   UdpServer server_;
-  
+
   std::set<Order> orders_seen_;
 };
 

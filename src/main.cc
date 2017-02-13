@@ -28,7 +28,7 @@ int get_process_id(const std::vector<std::string>& hosts) {
   auto hostname = get_hostname();
   for (std::size_t i = 0; i < hosts.size(); ++i) {
     if (hosts[i] == hostname) {
-       // our process is in the file, return its index.
+      // our process is in the file, return its index.
       return i;
     }
   }
@@ -40,7 +40,7 @@ int get_process_id(const std::vector<std::string>& hosts) {
 // validate the commander_id flag.
 void validate_commander_id(std::vector<std::string>& hosts, int commander_id) {
   // make sure the commander_id is valid
-  if (commander_id < 0 || (size_t) commander_id >= hosts.size()) {
+  if (commander_id < 0 || (size_t)commander_id >= hosts.size()) {
     std::cout << "commander_id " << commander_id
               << " does not reference a process" << std::endl;
     exit(-5);
@@ -55,7 +55,7 @@ void validate_faulty_count(const std::vector<std::string>& hosts, int faulty) {
     std::cout << "faulty count must be non-negative" << std::endl;
     exit(-5);
   }
-  if ((size_t) faulty + 2 > hosts.size()) {
+  if ((size_t)faulty + 2 > hosts.size()) {
     std::cout << "process count must be no less than (faulty + 2)" << std::endl;
     exit(-5);
   }
@@ -70,15 +70,17 @@ Order validate_order(const std::string& order, bool is_commander) {
   //   if (order == "") {
   //     std::cout << "the commander must specify an order" << std::endl;
   //   } else {
-  //     std::cout << "the order can either be \"attack\" or \"retreat\"" << std::endl;
+  //     std::cout << "the order can either be \"attack\" or \"retreat\"" <<
+  //     std::endl;
   //   }
   //   exit(-5);
   // } else {
   //   if (order != "") {
-  //     std::cout << "only the commander process can specify an order" << std::endl;
+  //     std::cout << "only the commander process can specify an order" <<
+  //     std::endl;
   //     exit(-5);
   //   }
-    return Order::UNKNOWN;
+  return Order::UNKNOWN;
   // }
 }
 
