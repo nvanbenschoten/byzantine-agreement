@@ -18,7 +18,8 @@
 
 typedef std::deque<net::Address> ProcessList;
 
-const unsigned int kAckTimeoutUSec = 250000;
+const struct timeval kAckTimeout = {0, 250000};
+const struct timeval kRoundTimeout = {1, 000000};
 const unsigned int kSendAttempts = 3;
 
 size_t MessagesPerRound(size_t process_num, unsigned int round);
@@ -36,8 +37,7 @@ class General {
   General(ProcessList processes, unsigned int id, unsigned int faulty)
       : processes_(processes), id_(id), faulty_(faulty), round_(0) {
     for (auto const& addr : processes_) {
-      clients_.emplace(addr,
-                       std::make_shared<udp::Client>(addr, kAckTimeoutUSec));
+      clients_.emplace(addr, std::make_shared<udp::Client>(addr, kAckTimeout));
     }
   }
 
@@ -72,7 +72,7 @@ class Lieutenant : public General {
  public:
   Lieutenant(ProcessList processes, unsigned int id, unsigned short server_port,
              unsigned int faulty)
-      : General(processes, id, faulty), server_(server_port) {}
+      : General(processes, id, faulty), server_(server_port, kRoundTimeout) {}
 
   msg::Order Decide();
 

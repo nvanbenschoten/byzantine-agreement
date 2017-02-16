@@ -57,9 +57,11 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
     id_buf[i] = htonl(msg.ids[i]);
   }
 
-  auto isValidAck = [msg](udp::ClientPtr _, char* buf, size_t n) -> bool {
+  auto isValidAck = [msg](udp::ClientPtr _, char* buf, size_t n) {
     auto ackRound = RoundOfAck(buf, n);
-    return ackRound && *ackRound == msg.round;
+    bool valid = ackRound && *ackRound == msg.round;
+    if (!valid) return udp::ServerAction::Continue;
+    return udp::ServerAction::Stop;
   };
 
   client->SendWithAck(buf, size, kSendAttempts, isValidAck);
@@ -85,46 +87,63 @@ msg::Order Commander::Decide() {
 }
 
 msg::Order Lieutenant::Decide() {
-  server_.Listen([this](udp::ClientPtr client, char* buf, size_t n) -> bool {
-    auto from = client->RemoteAddress();
-    auto msg = ByzantineMsgFromBuf(buf, n);
-    if (!msg || !ValidMessage(*msg, from)) {
-      // If the message was not valid, return without trying to use it.
-      return true;
-    }
+  server_.Listen(
+      [this](udp::ClientPtr client, char* buf, size_t n) {
+        auto from = client->RemoteAddress();
+        auto msg = ByzantineMsgFromBuf(buf, n);
+        if (!msg || !ValidMessage(*msg, from)) {
+          // If the message was not valid, return without trying to use it.
+          return udp::ServerAction::Continue;
+        }
 
-    logging::out << "Received " << *msg << " from p" << msg->ids.back() << "\n";
-    SendAckForRound(client, round_);
+        logging::out << "Received " << *msg << " from p" << msg->ids.back()
+                     << "\n";
+        SendAckForRound(client, round_);
 
-    bool newRound = false;
-    if (round_ == 0) {
-      // This check shouldn't be needed.
-      if (orders_seen_.size() == 0) {
-        orders_seen_.insert(msg->order);
-        msgs_this_round_.insert(*msg);
-        newRound = true;
-      }
-    } else {
-      if (ids_this_round_.count(msg->ids) == 0) {
-        ids_this_round_.insert(msg->ids);
-        msgs_this_round_.insert(*msg);
-        orders_seen_.insert(msg->order);
+        bool newRound = false;
+        if (round_ == 0) {
+          // This check shouldn't be needed.
+          if (orders_seen_.size() == 0) {
+            orders_seen_.insert(msg->order);
+            msgs_this_round_.insert(*msg);
+            newRound = true;
+          }
+        } else {
+          if (ids_this_round_.count(msg->ids) == 0) {
+            ids_this_round_.insert(msg->ids);
+            msgs_this_round_.insert(*msg);
+            orders_seen_.insert(msg->order);
 
-        newRound = RoundOver();
-        // TODO(deal with timeouts);
-      }
-    }
+            newRound = RoundOver();
+            // TODO(deal with timeouts);
+          }
+        }
 
-    if (newRound) {
-      if (round_ == faulty_ + 1) {
-        ClearSenders();
-        return false;
-      } else {
-        BeginNewRound();
-      }
-    }
-    return true;
-  });
+        if (newRound) {
+          if (round_ == faulty_ + 1) {
+            ClearSenders();
+            return udp::ServerAction::Stop;
+          } else {
+            BeginNewRound();
+          }
+        }
+        return udp::ServerAction::Continue;
+      },
+      [this]() {
+        if (round_ == 0) {
+          // We can't timeout in the first round. Just continue.
+          return udp::ServerAction::Continue;
+        }
+
+        logging::out << "Timeout in round " << round_ << "\n";
+        if (round_ == faulty_ + 1) {
+          ClearSenders();
+          return udp::ServerAction::Stop;
+        } else {
+          BeginNewRound();
+          return udp::ServerAction::Continue;
+        }
+      });
 
   return DecideOrder();
 }

@@ -3,7 +3,7 @@
 namespace udp {
 
 // creates a UDP socket or throws an exception on error.
-Socket CreateSocket(int timeout_usec) {
+Socket CreateSocket(struct timeval timeout) {
   // create the socket
   Socket sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {
@@ -18,8 +18,7 @@ Socket CreateSocket(int timeout_usec) {
   }
 
   // set socket timeout if provided.
-  if (timeout_usec > 0) {
-    struct timeval timeout = {0, timeout_usec};
+  if (timeout.tv_sec != 0 || timeout.tv_usec != 0) {
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
                    sizeof(struct timeval))) {
       throw net::SocketException();
@@ -87,7 +86,8 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
     // networking error. For timeouts, try sending the message again. For
     // anything else, throw an exception.
     if (n < 0) {
-      bool isTimeout = errno == EAGAIN || errno == EWOULDBLOCK;
+      bool isTimeout =
+          errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNREFUSED;
       if (isTimeout) {
         continue;
       } else {
@@ -95,11 +95,15 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
       }
     }
 
-    if (validAck(shared_from_this(), ackbuf, n)) return;
+    auto action = validAck(shared_from_this(), ackbuf, n);
+    if (action == ServerAction::Stop) {
+      return;
+    }
   }
 }
 
-Server::Server(unsigned short port) : sockfd_(CreateSocket(0)) {
+Server::Server(unsigned short port, struct timeval timeout)
+    : sockfd_(CreateSocket(timeout)) {
   // create a socket and associate the it with the port
   struct sockaddr_in server_address = {};
   server_address.sin_family = AF_INET;
@@ -112,7 +116,7 @@ Server::Server(unsigned short port) : sockfd_(CreateSocket(0)) {
   }
 };
 
-void Server::Listen(OnReceiveFn rcv) const {
+void Server::Listen(OnReceiveFn rcv, OnTimeout timeout) const {
   // While the server is running, wait for datagrams and
   // call the provided closure with their data.
   while (1) {
@@ -126,15 +130,31 @@ void Server::Listen(OnReceiveFn rcv) const {
     int n = recvfrom(sockfd_, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr,
                      &clientlen);
     if (n < 0) {
-      throw net::ReceiveException();
+      bool isTimeout =
+          errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNREFUSED;
+      if (isTimeout) {
+        auto action = timeout();
+        switch (action) {
+          case ServerAction::Continue:
+            continue;
+          case ServerAction::Stop:
+            return;
+          default:
+            throw std::invalid_argument("unexpected ServerAction value");
+        }
+      } else {
+        throw net::ReceiveException();
+      }
     }
 
     // call closure with new client.
     auto client = std::make_shared<udp::Client>(clientaddr);
 
     // Call the receive callback with the data received.
-    bool keepRunning = rcv(client, buf, n);
-    if (!keepRunning) break;
+    auto action = rcv(client, buf, n);
+    if (action == ServerAction::Stop) {
+      return;
+    }
   }
 }
 

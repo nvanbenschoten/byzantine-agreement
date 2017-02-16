@@ -121,9 +121,9 @@ void ValidateFaultyCount(const ProcessList& processes, int faulty) {
   if (faulty < 0) {
     throw args::ValidationError("faulty count must be non-negative");
   }
-  if ((size_t)faulty + 2 > processes.size()) {
+  if ((size_t)faulty * 3 + 1 > processes.size()) {
     throw args::ValidationError(
-        "process count must be no less than (faulty + 2)");
+        "3f+1 processes are needed to tolerate up to f faulty processes");
   }
 }
 

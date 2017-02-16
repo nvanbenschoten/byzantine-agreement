@@ -24,7 +24,7 @@ namespace udp {
 
 typedef int Socket;
 
-Socket CreateSocket(int timeout_usec);
+Socket CreateSocket(struct timeval timeout);
 
 class SocketAddress {
  public:
@@ -43,15 +43,22 @@ class SocketAddress {
 
 class Client;
 typedef std::shared_ptr<Client> ClientPtr;
-typedef std::function<bool(ClientPtr, char*, size_t)> OnReceiveFn;
+
+enum class ServerAction {
+  Continue,
+  Stop,
+};
+
+typedef std::function<ServerAction(ClientPtr, char*, size_t)> OnReceiveFn;
+typedef std::function<ServerAction()> OnTimeout;
 
 class Client : public std::enable_shared_from_this<Client> {
  public:
-  Client(net::Address addr, long int timeout_usec = 0)
-      : sockfd_(CreateSocket(timeout_usec)), remote_address_(addr){};
+  Client(net::Address addr, struct timeval timeout = {0, 0})
+      : sockfd_(CreateSocket(timeout)), remote_address_(addr){};
 
   Client(struct sockaddr_in sockaddr)
-      : sockfd_(CreateSocket(0)), remote_address_(sockaddr){};
+      : sockfd_(CreateSocket({0, 0})), remote_address_(sockaddr){};
 
   ~Client() { close(sockfd_); };
 
@@ -75,11 +82,11 @@ class Client : public std::enable_shared_from_this<Client> {
 
 class Server {
  public:
-  Server(unsigned short port);
+  Server(unsigned short port, struct timeval timeout = {0, 0});
 
   ~Server() { close(sockfd_); };
 
-  void Listen(OnReceiveFn rcv) const;
+  void Listen(OnReceiveFn rcv, OnTimeout timeout) const;
 
  private:
   const Socket sockfd_;
