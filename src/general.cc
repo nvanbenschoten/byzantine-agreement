@@ -115,9 +115,7 @@ msg::Order Lieutenant::Decide() {
             ids_this_round_.insert(msg->ids);
             msgs_this_round_.insert(*msg);
             orders_seen_.insert(msg->order);
-
-            newRound = RoundOver();
-            // TODO(deal with timeouts);
+            newRound = RoundComplete();
           }
         }
 
@@ -159,8 +157,7 @@ void Lieutenant::ClearSenders() {
 
 void Lieutenant::BeginNewRound() {
   ClearSenders();
-  round_++;
-  ids_this_round_.clear();
+  IncrementRound();
 
   std::unordered_map<unsigned int, std::vector<msg::Message>> toSend;
   for (msg::Message msg : msgs_this_round_) {
@@ -197,6 +194,7 @@ void Lieutenant::BeginNewRound() {
     }));
   }
 
+  ids_this_round_.clear();
   msgs_this_round_.clear();
 }
 
@@ -246,7 +244,7 @@ msg::Order Lieutenant::DecideOrder() const {
   return msg::Order::RETREAT;
 }
 
-bool Lieutenant::RoundOver() const {
+inline bool Lieutenant::RoundComplete() const {
   return ids_this_round_.size() == MessagesPerRound(processes_.size(), round_);
 }
 

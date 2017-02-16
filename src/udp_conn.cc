@@ -2,22 +2,22 @@
 
 namespace udp {
 
-// creates a UDP socket or throws an exception on error.
+// Creates a UDP socket or throws an exception on error.
 Socket CreateSocket(struct timeval timeout) {
-  // create the socket
+  // Create the socket.
   Socket sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {
     throw net::SocketException();
   }
 
-  // resuse the port immediately after the socket is killed.
+  // Resuse the port immediately after the socket is killed.
   int optval = 1;
   if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval,
                  sizeof(int))) {
     throw net::SocketException();
   }
 
-  // set socket timeout if provided.
+  // Set socket timeout if provided.
   if (timeout.tv_sec != 0 || timeout.tv_usec != 0) {
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
                    sizeof(struct timeval))) {
@@ -29,13 +29,13 @@ Socket CreateSocket(struct timeval timeout) {
 }
 
 SocketAddress::SocketAddress(net::Address addr) {
-  // get the remote server's DNS entry
+  // Get the remote server's DNS entry.
   struct hostent *server = gethostbyname(addr.hostname().c_str());
   if (server == nullptr) {
     throw net::HostNotFoundException(addr.hostname());
   }
 
-  // build the server's Internet address.
+  // Build the server's Internet address.
   addr_.sin_family = AF_INET;
   bcopy((char *)server->h_addr, (char *)&addr_.sin_addr.s_addr,
         server->h_length);
@@ -58,7 +58,7 @@ std::string SocketAddress::Hostname() const {
 
 unsigned short SocketAddress::Port() const { return ntohs(addr_.sin_port); }
 
-void Client::Send(const char *buf, size_t size) {
+void Client::Send(const char *buf, size_t size) const {
   auto addr = remote_address_.addr();
   auto addrlen = remote_address_.addr_len();
   if (sendto(sockfd_, buf, size, 0, addr, addrlen) < 0) {
@@ -67,8 +67,9 @@ void Client::Send(const char *buf, size_t size) {
 }
 
 void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
-                         OnReceiveFn validAck) {
-  for (; attempts > 0; --attempts) {
+                         OnReceiveFn validAck) const {
+  bool noLimit = attempts == 0;
+  for (; noLimit || attempts > 0; --attempts) {
     // Send the message to the client.
     Send(buf, size);
 
@@ -95,6 +96,7 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
       }
     }
 
+    // Make sure the ack was valid.
     auto action = validAck(shared_from_this(), ackbuf, n);
     if (action == ServerAction::Stop) {
       return;
@@ -104,7 +106,7 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
 
 Server::Server(unsigned short port, struct timeval timeout)
     : sockfd_(CreateSocket(timeout)) {
-  // create a socket and associate the it with the port
+  // Create a socket and associate the it with the port
   struct sockaddr_in server_address = {};
   server_address.sin_family = AF_INET;
   server_address.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -124,7 +126,7 @@ void Server::Listen(OnReceiveFn rcv, OnTimeout timeout) const {
     char buf[BUFSIZE];
     bzero(buf, BUFSIZE);
 
-    // receive from the socket.
+    // Receive from the socket.
     struct sockaddr_in clientaddr;
     socklen_t clientlen = sizeof(clientaddr);
     int n = recvfrom(sockfd_, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr,
@@ -147,7 +149,7 @@ void Server::Listen(OnReceiveFn rcv, OnTimeout timeout) const {
       }
     }
 
-    // call closure with new client.
+    // Call closure with new client.
     auto client = std::make_shared<udp::Client>(clientaddr);
 
     // Call the receive callback with the data received.

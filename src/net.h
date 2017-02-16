@@ -20,6 +20,7 @@ namespace net {
 // Retrieves the current computer's hostname.
 std::string GetHostname();
 
+// Holds the address of a server in the form host:port.
 class Address {
  public:
   Address(std::string hostname, unsigned short port)
@@ -40,12 +41,14 @@ class Address {
   unsigned short port_;
 };
 
+// Create an address from a string using the default_port if the string does not
+// specify a port itself.
 Address AddressWithDefaultPort(
     std::string addr, std::experimental::optional<unsigned short> default_port);
 
 }  // namespace net
 
-// custom specialization of std::hash can be injected in namespace std
+// Custom specialization of std::hash can be injected in namespace std.
 namespace std {
 template <>
 struct hash<net::Address> {

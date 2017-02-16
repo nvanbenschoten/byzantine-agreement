@@ -2,7 +2,7 @@
 
 namespace logging {
 
-// Needed to be defined in .cc file to avoid duplicate symbol.
-Logger out;
+// Needed to be defined in .cc file to avoid duplicate symbols.
+Logger out(&std::cerr);
 
 }  // namespace logging
