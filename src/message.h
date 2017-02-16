@@ -1,10 +1,15 @@
 #ifndef MESSAGE_H_
 #define MESSAGE_H_
 
+#include <exception>
+#include <iostream>
 #include <string>
+#include <vector>
 
-#define BYZANTINE_MESSAGE_TYPE 1
-#define ACK_TYPE 2
+const uint32_t kByzantineMessageType = 1;
+const uint32_t kAckType = 2;
+
+namespace msg {
 
 typedef struct {
   uint32_t type;   // Must be equal to 1
@@ -23,9 +28,23 @@ typedef struct {
 enum class Order {
   RETREAT,
   ATTACK,
-  UNKNOWN,
 };
 
-std::string order_string(Order o);
+Order StringToOrder(std::string str);
+std::string OrderString(Order o);
+
+struct Message {
+  int round;
+  Order order;
+  std::vector<int> ids;
+};
+
+// Needed so that Message can be added to std::set.
+bool operator<(const Message& lhs, const Message& rhs);
+
+// Allow streaming of Message on ostreams.
+std::ostream& operator<<(std::ostream& o, const Message& m);
+
+}  // namespace msg
 
 #endif

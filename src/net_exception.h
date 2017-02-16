@@ -1,7 +1,13 @@
+#ifndef NET_EXCEPTION_H_
+#define NET_EXCEPTION_H_
+
 #include <errno.h>
+
 #include <exception>
 #include <sstream>
 #include <string>
+
+namespace net {
 
 class AbstractNetworkException : public std::exception {
  public:
@@ -13,7 +19,7 @@ class AbstractNetworkException : public std::exception {
 
 class SocketException : public AbstractNetworkException {
  public:
-  SocketException() { stream_ << "Could not create UDP Socket"; }
+  SocketException() { stream_ << "Could not create UDP Socket: " << errno; }
 };
 
 class HostNotFoundException : public AbstractNetworkException {
@@ -25,7 +31,7 @@ class HostNotFoundException : public AbstractNetworkException {
 
 class BindException : public AbstractNetworkException {
  public:
-  BindException() { stream_ << "Could not bind UDP Socket"; }
+  BindException() { stream_ << "Could not bind UDP Socket: " << errno; }
 };
 
 class SendException : public AbstractNetworkException {
@@ -39,3 +45,7 @@ class ReceiveException : public AbstractNetworkException {
     stream_ << "Could not receive data on socket: " << errno;
   }
 };
+
+}  // namespace net
+
+#endif
