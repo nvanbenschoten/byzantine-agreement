@@ -59,7 +59,7 @@ class Client : public std::enable_shared_from_this<Client> {
   void Send(const char* buf, size_t size);
 
   // Sends the message to the remote server and waits for an acknowledgement.
-  void SendWithAck(const char* buf, size_t size, int attempts,
+  void SendWithAck(const char* buf, size_t size, unsigned int attempts,
                    OnReceiveFn validAck);
 
   // Returns the hostname of the remote server.

@@ -1,13 +1,6 @@
 #include "general.h"
 
-// TODO(remove)
-void dump_buf(char* buf, size_t n) {
-  std::cout << "Buffer [";
-  for (int i = 0; i < n; ++i) std::cout << std::hex << (int)buf[i];
-  std::cout << "]\n";
-}
-
-int MessagesPerRound(int process_num, int round) {
+size_t MessagesPerRound(unsigned int process_num, unsigned int round) {
   if (round == 0) return 1;
   return (process_num - 1 - round) * MessagesPerRound(process_num, round - 1);
 }
@@ -34,7 +27,7 @@ std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
   return msg;
 }
 
-std::experimental::optional<int> RoundOfAck(char* buf, size_t n) {
+std::experimental::optional<unsigned int> RoundOfAck(char* buf, size_t n) {
   // Check to make sure the size of the buffer is correct.
   if (n != sizeof(msg::Ack)) {
     return {};
@@ -45,7 +38,8 @@ std::experimental::optional<int> RoundOfAck(char* buf, size_t n) {
 }
 
 void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
-  int size = sizeof(msg::ByzantineMessage) + sizeof(uint32_t) * msg.ids.size();
+  size_t size =
+      sizeof(msg::ByzantineMessage) + sizeof(uint32_t) * msg.ids.size();
   char buf[size];
   bzero(buf, size);
 
@@ -71,7 +65,7 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
   client->SendWithAck(buf, size, kSendAttempts, isValidAck);
 }
 
-void SendAckForRound(udp::ClientPtr client, int round) {
+void SendAckForRound(udp::ClientPtr client, unsigned int round) {
   msg::Ack ack = {};
   ack.type = htonl(kAckType);
   ack.size = htonl(sizeof(ack));
@@ -82,8 +76,8 @@ void SendAckForRound(udp::ClientPtr client, int round) {
 }
 
 msg::Order Commander::Decide() {
-  msg::Message msg{round_, order_, std::vector<int>{0}};
-  for (int pid = 1; pid < processes_.size(); ++pid) {
+  msg::Message msg{round_, order_, std::vector<unsigned int>{0}};
+  for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
     logging::out << "Sending  " << msg << " to p" << pid << "\n";
     SendMessage(clients_[processes_[pid]], msg);
   }
@@ -146,7 +140,7 @@ void Lieutenant::BeginNewRound() {
   ClearSenders();
   round_++;
 
-  std::unordered_map<int, std::vector<msg::Message>> toSend;
+  std::unordered_map<unsigned int, std::vector<msg::Message>> toSend;
   for (msg::Message msg : msgs_this_round_) {
     if (msg.round != round_ - 1) {
       throw std::logic_error(
@@ -155,7 +149,7 @@ void Lieutenant::BeginNewRound() {
 
     msg.round = round_;
     msg.ids.push_back(id_);
-    for (int pid = 0; pid < processes_.size(); ++pid) {
+    for (unsigned int pid = 0; pid < processes_.size(); ++pid) {
       // Only send to processes not already in this message.
       bool inMsg = false;
       for (auto const& id : msg.ids) {
@@ -199,10 +193,10 @@ bool Lieutenant::ValidMessage(const msg::Message& msg,
     return false;
   }
   // Invalid if not all ids are unique.
-  std::set<int> idset;
+  std::set<unsigned int> idset;
   for (auto const& id : msg.ids) {
     // Invalid if any id is out of bounds.
-    if (id < 0 || id >= processes_.size()) {
+    if (id >= processes_.size()) {
       return false;
     }
     // Invalid if any id is our id.

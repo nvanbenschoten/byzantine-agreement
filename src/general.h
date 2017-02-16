@@ -18,22 +18,22 @@
 
 typedef std::deque<net::Address> ProcessList;
 
-const int kAckTimeoutUSec = 250000;
-const int kSendAttempts = 3;
+const unsigned int kAckTimeoutUSec = 250000;
+const unsigned int kSendAttempts = 3;
 
-int MessagesPerRound(int process_num, int round);
+size_t MessagesPerRound(unsigned int process_num, unsigned int round);
 
 void SendMessage(udp::ClientPtr client, const msg::Message& msg);
-void SendAckForRound(udp::ClientPtr client, int round);
+void SendAckForRound(udp::ClientPtr client, unsigned int round);
 
 std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
                                                               size_t n);
-std::experimental::optional<int> RoundOfAck(char* buf, size_t n);
+std::experimental::optional<unsigned int> RoundOfAck(char* buf, size_t n);
 
 // TODO
 class General {
  public:
-  General(ProcessList processes, int id, int faulty)
+  General(ProcessList processes, unsigned int id, unsigned int faulty)
       : processes_(processes), id_(id), faulty_(faulty), round_(0) {
     for (auto const& addr : processes_) {
       clients_.emplace(addr,
@@ -47,18 +47,18 @@ class General {
 
  protected:
   const ProcessList processes_;
-  const int id_;
-  const int faulty_;
+  const unsigned int id_;
+  const unsigned int faulty_;
 
   std::unordered_map<net::Address, udp::ClientPtr> clients_;
 
-  int round_;
+  unsigned int round_;
 };
 
 // TODO
 class Commander : public General {
  public:
-  Commander(ProcessList processes, int faulty, msg::Order order)
+  Commander(ProcessList processes, unsigned int faulty, msg::Order order)
       : General(processes, 0, faulty), order_(order) {}
 
   msg::Order Decide();
@@ -70,8 +70,8 @@ class Commander : public General {
 // TODO
 class Lieutenant : public General {
  public:
-  Lieutenant(ProcessList processes, int id, unsigned short server_port,
-             int faulty)
+  Lieutenant(ProcessList processes, unsigned int id, unsigned short server_port,
+             unsigned int faulty)
       : General(processes, id, faulty), server_(server_port) {}
 
   msg::Order Decide();
@@ -83,7 +83,7 @@ class Lieutenant : public General {
   std::set<msg::Message> msgs_this_round_;
   // Same as orders_last_round_, except with only the ids so that all messages
   // from the same process colide.
-  std::set<std::vector<int>> ids_this_round_;
+  std::set<std::vector<unsigned int>> ids_this_round_;
   std::vector<std::thread> sender_threads_this_round_;
 
   void ClearSenders();

@@ -67,7 +67,7 @@ void Client::Send(const char *buf, size_t size) {
   }
 }
 
-void Client::SendWithAck(const char *buf, size_t size, int attempts,
+void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
                          OnReceiveFn validAck) {
   for (; attempts > 0; --attempts) {
     // Send the message to the client.

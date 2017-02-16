@@ -74,7 +74,7 @@ ProcessList GetProcesses(
 // our hostname.
 void CheckProcessId(const ProcessList& processes, int my_id) {
   // check if the id is within bounds.
-  if (my_id < 0 || my_id >= processes.size()) {
+  if (my_id < 0 || (uint)my_id >= processes.size()) {
     throw args::ValidationError("--id value not found in hostfile");
   }
 

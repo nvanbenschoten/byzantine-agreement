@@ -34,9 +34,9 @@ Order StringToOrder(std::string str);
 std::string OrderString(Order o);
 
 struct Message {
-  int round;
+  unsigned int round;
   Order order;
-  std::vector<int> ids;
+  std::vector<unsigned int> ids;
 };
 
 // Needed so that Message can be added to std::set.
