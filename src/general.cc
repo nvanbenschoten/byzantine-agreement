@@ -1,5 +1,7 @@
 #include "general.h"
 
+namespace generals {
+
 size_t MessagesPerRound(size_t process_num, unsigned int round) {
   if (round == 0) return 1;
   return (process_num - 1 - round) * MessagesPerRound(process_num, round - 1);
@@ -247,3 +249,5 @@ msg::Order Lieutenant::DecideOrder() const {
 bool Lieutenant::RoundOver() const {
   return ids_this_round_.size() == MessagesPerRound(processes_.size(), round_);
 }
+
+}  // namespace generals

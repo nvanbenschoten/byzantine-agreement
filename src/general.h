@@ -16,6 +16,8 @@
 #include "net.h"
 #include "udp_conn.h"
 
+namespace generals {
+
 typedef std::deque<net::Address> ProcessList;
 
 const struct timeval kAckTimeout = {0, 250000};
@@ -98,5 +100,7 @@ class Lieutenant : public General {
   msg::Order DecideOrder() const;
   bool RoundOver() const;
 };
+
+}  // namespace generals
 
 #endif

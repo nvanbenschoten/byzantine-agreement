@@ -49,10 +49,10 @@ const std::string id_desc =
 const std::string verbose_desc = "Sets the logging level to verbose.";
 
 // gets the processed.
-ProcessList GetProcesses(
+generals::ProcessList GetProcesses(
     const std::string hostfile,
     std::experimental::optional<unsigned short> default_port) {
-  ProcessList processes;
+  generals::ProcessList processes;
   std::ifstream file(hostfile);
   if (!file) {
     throw std::runtime_error("could not open hostfile");
@@ -72,7 +72,7 @@ ProcessList GetProcesses(
 
 // checks if the --id flag is within the process list and pointing to
 // our hostname.
-void CheckProcessId(const ProcessList& processes, int my_id) {
+void CheckProcessId(const generals::ProcessList& processes, int my_id) {
   // check if the id is within bounds.
   if (my_id < 0 || (uint)my_id >= processes.size()) {
     throw args::ValidationError("--id value not found in hostfile");
@@ -85,7 +85,7 @@ void CheckProcessId(const ProcessList& processes, int my_id) {
 }
 
 // gets the current process ID.
-int GetProcessId(const ProcessList& processes) {
+int GetProcessId(const generals::ProcessList& processes) {
   int found = -1;
   auto hostname = net::GetHostname();
   for (std::size_t i = 0; i < processes.size(); ++i) {
@@ -107,7 +107,7 @@ int GetProcessId(const ProcessList& processes) {
 }
 
 // validate the commander_id flag.
-void ValidateCommanderId(ProcessList& processes, int commander_id) {
+void ValidateCommanderId(generals::ProcessList& processes, int commander_id) {
   // make sure the commander_id is valid
   if (commander_id < 0 || (size_t)commander_id >= processes.size()) {
     throw args::ValidationError("commander_id does not reference a process");
@@ -117,7 +117,7 @@ void ValidateCommanderId(ProcessList& processes, int commander_id) {
 }
 
 // validate the fault flag.
-void ValidateFaultyCount(const ProcessList& processes, int faulty) {
+void ValidateFaultyCount(const generals::ProcessList& processes, int faulty) {
   if (faulty < 0) {
     throw args::ValidationError("faulty count must be non-negative");
   }
@@ -199,12 +199,13 @@ int main(int argc, const char** argv) {
     bool is_commander = my_id == commander_id_val;
     auto order_val = ValidateOrder(order, is_commander);
 
-    std::unique_ptr<General> general;
+    std::unique_ptr<generals::General> general;
     if (is_commander) {
-      general = std::make_unique<Commander>(processes, faulty_val, *order_val);
+      general = std::make_unique<generals::Commander>(processes, faulty_val,
+                                                      *order_val);
     } else {
-      general = std::make_unique<Lieutenant>(processes, my_id, server_port,
-                                             faulty_val);
+      general = std::make_unique<generals::Lieutenant>(processes, my_id,
+                                                       server_port, faulty_val);
     }
     msg::Order decision = general->Decide();
 
