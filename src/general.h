@@ -21,7 +21,7 @@ typedef std::deque<net::Address> ProcessList;
 const unsigned int kAckTimeoutUSec = 250000;
 const unsigned int kSendAttempts = 3;
 
-size_t MessagesPerRound(unsigned int process_num, unsigned int round);
+size_t MessagesPerRound(size_t process_num, unsigned int round);
 
 void SendMessage(udp::ClientPtr client, const msg::Message& msg);
 void SendAckForRound(udp::ClientPtr client, unsigned int round);

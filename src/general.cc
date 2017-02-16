@@ -1,6 +1,6 @@
 #include "general.h"
 
-size_t MessagesPerRound(unsigned int process_num, unsigned int round) {
+size_t MessagesPerRound(size_t process_num, unsigned int round) {
   if (round == 0) return 1;
   return (process_num - 1 - round) * MessagesPerRound(process_num, round - 1);
 }
@@ -139,6 +139,7 @@ void Lieutenant::ClearSenders() {
 void Lieutenant::BeginNewRound() {
   ClearSenders();
   round_++;
+  ids_this_round_.clear();
 
   std::unordered_map<unsigned int, std::vector<msg::Message>> toSend;
   for (msg::Message msg : msgs_this_round_) {
