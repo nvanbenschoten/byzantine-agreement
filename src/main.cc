@@ -11,9 +11,6 @@
 #include "log.h"
 #include "net.h"
 
-typedef args::ValueFlag<int> IntFlag;
-typedef args::ValueFlag<std::string> StringFlag;
-
 const std::string program_desc =
     "An implementation of the Byzantine Agreement Algorithm.";
 const std::string help_desc = "Display this help menu.";
@@ -43,11 +40,21 @@ const std::string order_desc =
     "The order can be either \"attack\" or \"retreat\". If specified, the "
     "process will be the Commander and will send the specified order. "
     "Otherwise, the process will be a lieutenant.";
+const std::string malicious_desc =
+    "A list of malicious behaviors that the process can exhibit. Multiple "
+    "behaviors can be provided by repeating the flag. Options:\n"
+    "-\"silent\": send no messages\n"
+    "-\"delay_send\": delays the send of messages\n"
+    "-\"partial_send\": occasionally drop messages\n";
 const std::string id_desc =
     "The optional id specifier of this process. Only needed if multiple "
     "processes in the hostfile are running on the same host, otherwise it can "
     "be deduced from the hostfile. 0-indexed.";
 const std::string verbose_desc = "Sets the logging level to verbose.";
+
+typedef args::ValueFlag<int> IntFlag;
+typedef args::ValueFlag<std::string> StringFlag;
+typedef args::ValueFlagList<std::string> StringFlagList;
 
 // Gets the process list from the hostfile.
 generals::ProcessList GetProcesses(
@@ -80,7 +87,7 @@ void CheckProcessId(const generals::ProcessList& processes, int my_id) {
   }
 
   // Check if the process is on this host.
-  if (processes[my_id].hostname() != net::GetHostname()) {
+  if (processes.at(my_id).hostname() != net::GetHostname()) {
     throw args::ValidationError("--id value is not the hostname of this host");
   }
 }
@@ -90,7 +97,7 @@ int GetProcessId(const generals::ProcessList& processes) {
   int found = -1;
   auto hostname = net::GetHostname();
   for (std::size_t i = 0; i < processes.size(); ++i) {
-    if (processes[i].hostname() == hostname) {
+    if (processes.at(i).hostname() == hostname) {
       if (found >= 0) {
         // Multiple processes are set to use our host.
         throw args::UsageError(
@@ -153,6 +160,19 @@ std::experimental::optional<msg::Order> ValidateOrder(StringFlag& order,
   }
 }
 
+// Determine which malicious behavior this process will exhibit.
+generals::MaliciousBehavior GetMaliciousBehavior(StringFlagList& malicious) {
+  try {
+    generals::MaliciousBehavior behavior = generals::MaliciousBehavior::NONE;
+    for (const auto mal : args::get(malicious)) {
+      behavior |= generals::StringToMaliciousBehavior(mal);
+    }
+    return behavior;
+  } catch (std::invalid_argument e) {
+    throw args::ValidationError(e.what());
+  }
+}
+
 // Prints the order that our process decided upon to stdout.
 void PrintOrder(int id, msg::Order decision) {
   std::cout << id << ": Agreed on " << msg::OrderString(decision) << std::endl;
@@ -166,6 +186,8 @@ int main(int argc, const char** argv) {
   IntFlag faulty(parser, "faulty", faulty_desc, {'f', "faulty"});
   IntFlag cmdr_id(parser, "commander_id", cmdr_id_desc, {'C', "commander_id"});
   StringFlag order(parser, "order", order_desc, {'o', "order"});
+  StringFlagList malicious(parser, "malicious", malicious_desc,
+                           {'m', "malicious"});
   IntFlag id(parser, "id", id_desc, {'i', "id"});
   args::Flag verbose(parser, "verbose", verbose_desc, {'v', "verbose"});
 
@@ -200,36 +222,42 @@ int main(int argc, const char** argv) {
     } else {
       my_id = GetProcessId(processes);
     }
-    auto server_port = processes[my_id].port();
+    auto server_port = processes.at(my_id).port();
 
+    // Validate commander_id and faulty count flags.
     ValidateCommanderId(processes, commander_id_val);
     ValidateFaultyCount(processes, faulty_val);
 
+    // Determine if the current process is the commander, and if so, what order
+    // they should use.
     bool is_commander = my_id == commander_id_val;
     auto order_val = ValidateOrder(order, is_commander);
+
+    // Determine which malicious behavior this process will exhibit.
+    generals::MaliciousBehavior behavior = GetMaliciousBehavior(malicious);
 
     // Create the General depending on it is the Commander or a Lieutenant.
     std::unique_ptr<generals::General> general;
     if (is_commander) {
       general = std::make_unique<generals::Commander>(processes, faulty_val,
-                                                      *order_val);
+                                                      *order_val, behavior);
     } else {
-      general = std::make_unique<generals::Lieutenant>(processes, my_id,
-                                                       server_port, faulty_val);
+      general = std::make_unique<generals::Lieutenant>(
+          processes, my_id, server_port, faulty_val, behavior);
     }
 
     // Run the algorithm by calling Decide() and print the results.
     msg::Order decision = general->Decide();
     PrintOrder(my_id, decision);
-  } catch (args::Help) {
+  } catch (const args::Help) {
     std::cout << parser;
     return 0;
-  } catch (args::UsageError e) {
+  } catch (const args::UsageError& e) {
     std::cerr << "\n  \033[1;31m" << e.what() << "\033[0m\n\n";
     std::cerr << parser;
     return 1;
-  } catch (std::runtime_error e) {
-    std::cerr << e.what() << std::endl;
+  } catch (const std::exception& e) {
+    std::cerr << "\033[1;31m" << e.what() << "\033[0m\n";
     return 1;
   }
 }

@@ -5,8 +5,10 @@
 #include <exception>
 #include <experimental/optional>
 #include <memory>
+#include <random>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -46,20 +48,57 @@ void SendAckForRound(udp::ClientPtr client, unsigned int round);
 // Holds a list of processes participating in the agreement algorithm.
 typedef std::vector<net::Address> ProcessList;
 
+// Holds a mapping from network addresses to UDP clients.
+typedef std::unordered_map<net::Address, udp::ClientPtr, net::AHash>
+    UdpClientMap;
+
 // Creates a mapping from network addresses to UDP clients, populated with each
 // process provided.
-std::unordered_map<net::Address, udp::ClientPtr> ClientsForProcessList(
-    const ProcessList processes);
+UdpClientMap ClientsForProcessList(const ProcessList processes);
+
+// Represents different types of malicious behavior a traitorous general can
+// exhibit.
+enum class MaliciousBehavior {
+  NONE = 0,
+  SILENT = 1 << 0,
+  DELAY_SEND = 1 << 1,
+  PARTIAL_SEND = 1 << 2,
+  // FLIP_ORDER = 1 << 3, Not supported.
+};
+
+inline MaliciousBehavior operator|(MaliciousBehavior a, MaliciousBehavior b) {
+  return (MaliciousBehavior)((int)a | (int)b);
+}
+inline MaliciousBehavior operator&(MaliciousBehavior a, MaliciousBehavior b) {
+  return (MaliciousBehavior)((int)a & (int)b);
+}
+inline MaliciousBehavior& operator|=(MaliciousBehavior& a,
+                                     MaliciousBehavior b) {
+  return (MaliciousBehavior&)((int&)a |= (int)b);
+}
+inline MaliciousBehavior& operator&=(MaliciousBehavior& a,
+                                     MaliciousBehavior b) {
+  return (MaliciousBehavior&)((int&)a &= (int)b);
+}
+inline bool Exhibits(MaliciousBehavior b, MaliciousBehavior test) {
+  return (b & test) != MaliciousBehavior::NONE;
+}
+
+// Maps a string to a MaliciousBehavior, throwing an exception if the string is
+// invalid.
+MaliciousBehavior StringToMaliciousBehavior(std::string str);
 
 // A abstract representation of a general process in the Byzantine Agreement
 // Algorithm. Extended by the Commander and Lieutenant classes.
 class General {
  public:
-  General(const ProcessList processes, unsigned int id, unsigned int faulty)
+  General(const ProcessList& processes, unsigned int id, unsigned int faulty,
+          MaliciousBehavior behavior)
       : processes_(processes),
         clients_(ClientsForProcessList(processes)),
         id_(id),
         faulty_(faulty),
+        behavior_(behavior),
         round_(0) {}
 
   virtual ~General() = default;
@@ -70,9 +109,21 @@ class General {
 
  protected:
   const ProcessList processes_;
-  const std::unordered_map<net::Address, udp::ClientPtr> clients_;
+  const UdpClientMap clients_;
   const unsigned int id_;
   const unsigned int faulty_;
+  const MaliciousBehavior behavior_;
+
+  // Determines if the current General exhibits the provided behavior.
+  inline bool ExhibitsBehavior(MaliciousBehavior test) {
+    return Exhibits(behavior_, test);
+  }
+  // Determines if the General should send a certain message, based on its
+  // malicious behavior.
+  bool ShouldSendMsg();
+  // Possibly delay the send of a message, based on the General's malicious
+  // behavior.
+  void MaybeDelaySend();
 
   unsigned int round_;
   // Determines if this is the first round of the algorithm.
@@ -89,8 +140,9 @@ class General {
 // A representation of a commander process in the Byzantine Agreement Algorithm.
 class Commander : public General {
  public:
-  Commander(const ProcessList processes, unsigned int faulty, msg::Order order)
-      : General(processes, 0, faulty), order_(order) {}
+  Commander(const ProcessList& processes, unsigned int faulty, msg::Order order,
+            MaliciousBehavior behavior)
+      : General(processes, 0, faulty, behavior), order_(order) {}
 
   msg::Order Decide();
 
@@ -102,9 +154,11 @@ class Commander : public General {
 // Algorithm.
 class Lieutenant : public General {
  public:
-  Lieutenant(const ProcessList processes, unsigned int id,
-             unsigned short server_port, unsigned int faulty)
-      : General(processes, id, faulty), server_(server_port, kRoundTimeout) {}
+  Lieutenant(const ProcessList& processes, unsigned int id,
+             unsigned short server_port, unsigned int faulty,
+             MaliciousBehavior behavior)
+      : General(processes, id, faulty, behavior),
+        server_(server_port, kRoundTimeout) {}
 
   msg::Order Decide();
 

@@ -41,22 +41,19 @@ class Address {
   unsigned short port_;
 };
 
+// A hash function for Address.
+struct AHash {
+  size_t operator()(const Address& a) const {
+    return std::hash<std::string>()(a.hostname()) ^
+           std::hash<unsigned short>()(a.port());
+  }
+};
+
 // Create an address from a string using the default_port if the string does not
 // specify a port itself.
 Address AddressWithDefaultPort(
     std::string addr, std::experimental::optional<unsigned short> default_port);
 
 }  // namespace net
-
-// Custom specialization of std::hash can be injected in namespace std.
-namespace std {
-template <>
-struct hash<net::Address> {
-  std::size_t operator()(const net::Address& k) const {
-    return (std::hash<std::string>()(k.hostname()) ^
-            (std::hash<unsigned short>()(k.port()) << 1));
-  }
-};
-}  // namespace std
 
 #endif

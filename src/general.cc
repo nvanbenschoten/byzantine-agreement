@@ -23,7 +23,7 @@ std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
   msg.ids.resize((n - sizeof(*c_msg)) / sizeof(uint32_t));
   uint32_t* id_buf = reinterpret_cast<uint32_t*>(buf + sizeof(*c_msg));
   for (size_t i = 0; i < msg.ids.size(); ++i) {
-    msg.ids[i] = ntohl(id_buf[i]);
+    msg.ids.at(i) = ntohl(id_buf[i]);
   }
 
   return msg;
@@ -58,7 +58,7 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
   // array.
   uint32_t* id_buf = reinterpret_cast<uint32_t*>(buf + sizeof(*c_msg));
   for (size_t i = 0; i < msg.ids.size(); ++i) {
-    id_buf[i] = htonl(msg.ids[i]);
+    id_buf[i] = htonl(msg.ids.at(i));
   }
 
   // Passed to SendWithAck to verify that any acknowledgement we hear is valid.
@@ -82,24 +82,78 @@ void SendAckForRound(udp::ClientPtr client, unsigned int round) {
   client->Send(buf, sizeof(ack));
 }
 
-std::unordered_map<net::Address, udp::ClientPtr> ClientsForProcessList(
-    const ProcessList processes) {
-  std::unordered_map<net::Address, udp::ClientPtr> clients;
+UdpClientMap ClientsForProcessList(const ProcessList processes) {
+  UdpClientMap clients;
   for (auto const& addr : processes) {
     clients.emplace(addr, std::make_shared<udp::Client>(addr, kAckTimeout));
   }
   return clients;
 }
 
+MaliciousBehavior StringToMaliciousBehavior(std::string str) {
+  if (str == "silent") return MaliciousBehavior::SILENT;
+  if (str == "delay_send") return MaliciousBehavior::DELAY_SEND;
+  if (str == "partial_send") return MaliciousBehavior::PARTIAL_SEND;
+  // if (str == "flip_order") return MaliciousBehavior::FLIP_ORDER;
+  throw std::invalid_argument(
+      "malicious behavior can one of {\"silent\", \"delay_send\", "
+      "\"partial_send\"}");
+}
+
+bool General::ShouldSendMsg() {
+  if (ExhibitsBehavior(MaliciousBehavior::SILENT)) {
+    return false;
+  }
+  if (ExhibitsBehavior(MaliciousBehavior::PARTIAL_SEND)) {
+    // Send message 75% of the time.
+    static thread_local std::default_random_engine random_engine(
+        std::chrono::system_clock::now().time_since_epoch().count());
+
+    std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    return distribution(random_engine) < 0.75;
+  }
+  return true;
+}
+
+void General::MaybeDelaySend() {
+  if (!ExhibitsBehavior(MaliciousBehavior::DELAY_SEND)) {
+    return;
+  }
+
+  // Here and above, static thread local to avoid expensive initialization cost
+  // on every call, while maintaining thread safety.
+  static thread_local std::default_random_engine random_engine(
+      std::chrono::system_clock::now().time_since_epoch().count());
+
+  // Delay for a random duration based on a selection from a poisson
+  // distribution centered at half the round timeout, at intervals of 1/10th a
+  // second.
+  typedef std::chrono::duration<int, std::deci> deciseconds;
+  auto timeout_deci = std::chrono::duration_cast<deciseconds>(kRoundTimeout);
+  std::poisson_distribution<int> poisson(timeout_deci.count() / 2);
+  int delay = poisson(random_engine);
+  if (delay <= 0) {
+    return;
+  }
+  std::this_thread::sleep_for(deciseconds{delay});
+  return;
+}
+
 msg::Order Commander::Decide() {
-  // Send in parallel so that some Lieutenants don't end up far ahead of others.
+  // Send in parallel so that some Lieutenants don't end up far ahead of
+  // others.
   ThreadGroup senders;
   msg::Message msg{round_, order_, std::vector<unsigned int>{0}};
   for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
-    logging::out << "Sending  " << msg << " to p" << pid << "\n";
+    if (ShouldSendMsg()) {
+      logging::out << "Sending  " << msg << " to p" << pid << "\n";
 
-    udp::ClientPtr client = clients_.at(processes_[pid]);
-    senders.AddThread([client, msg] { SendMessage(client, msg); });
+      udp::ClientPtr client = clients_.at(processes_.at(pid));
+      senders.AddThread([this, client, msg] {
+        MaybeDelaySend();
+        SendMessage(client, msg);
+      });
+    }
   }
   senders.JoinAll();
   return order_;
@@ -219,8 +273,10 @@ void Lieutenant::InitNewRound() {
         }
       }
       if (!inMsg) {
-        toSend[pid].push_back(msg);
-        logging::out << "Sending  " << msg << " to p" << pid << "\n";
+        if (ShouldSendMsg()) {
+          logging::out << "Sending  " << msg << " to p" << pid << "\n";
+          toSend.at(pid).push_back(msg);
+        }
       }
     }
   }
@@ -230,7 +286,8 @@ void Lieutenant::InitNewRound() {
       // Send each message to process serially.
       auto pid = batch.first;
       for (auto const& msg : batch.second) {
-        SendMessage(clients_.at(processes_[pid]), msg);
+        MaybeDelaySend();
+        SendMessage(clients_.at(processes_.at(pid)), msg);
       }
     });
   }
@@ -252,7 +309,7 @@ bool Lieutenant::ValidMessage(const msg::Message& msg,
     return false;
   }
   // Invalid if the first message is not from the General (pid 0);
-  if (msg.ids[0] != 0) {
+  if (msg.ids.at(0) != 0) {
     return false;
   }
   // Invalid if not all ids are unique.
@@ -274,7 +331,7 @@ bool Lieutenant::ValidMessage(const msg::Message& msg,
   // Invalid if the last id does not match the sender. This check will not
   // work for processes on the same host, because we can not know the sending
   // port of the process, only its receiving port.
-  if (processes_[msg.ids.back()].hostname() != from.hostname()) {
+  if (processes_.at(msg.ids.back()).hostname() != from.hostname()) {
     return false;
   }
   return true;

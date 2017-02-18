@@ -30,7 +30,9 @@ enum class Order {
   ATTACK,
 };
 
+// Maps a string to an Order, throwing an exception if the string is invalid.
 Order StringToOrder(std::string str);
+// Returns the string representation of the provided Order.
 std::string OrderString(Order o);
 
 struct Message {

@@ -34,7 +34,7 @@ std::ostream& operator<<(std::ostream& o, const Message& m) {
     << ", ids: <";
   for (size_t i = 0; i < m.ids.size(); ++i) {
     if (i > 0) o << ' ';
-    o << m.ids[i];
+    o << m.ids.at(i);
   }
   o << ">}";
   return o;
