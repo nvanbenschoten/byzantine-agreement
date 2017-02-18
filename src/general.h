@@ -54,7 +54,7 @@ typedef std::unordered_map<net::Address, udp::ClientPtr, net::AHash>
 
 // Creates a mapping from network addresses to UDP clients, populated with each
 // process provided.
-UdpClientMap ClientsForProcessList(const ProcessList processes);
+UdpClientMap ClientsForProcessList(const ProcessList& processes);
 
 // Represents different types of malicious behavior a traitorous general can
 // exhibit.

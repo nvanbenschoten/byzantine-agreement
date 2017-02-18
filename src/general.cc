@@ -23,7 +23,7 @@ std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
   msg.ids.resize((n - sizeof(*c_msg)) / sizeof(uint32_t));
   uint32_t* id_buf = reinterpret_cast<uint32_t*>(buf + sizeof(*c_msg));
   for (size_t i = 0; i < msg.ids.size(); ++i) {
-    msg.ids.at(i) = ntohl(id_buf[i]);
+    msg.ids[i] = ntohl(id_buf[i]);
   }
 
   return msg;
@@ -58,7 +58,7 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
   // array.
   uint32_t* id_buf = reinterpret_cast<uint32_t*>(buf + sizeof(*c_msg));
   for (size_t i = 0; i < msg.ids.size(); ++i) {
-    id_buf[i] = htonl(msg.ids.at(i));
+    id_buf[i] = htonl(msg.ids[i]);
   }
 
   // Passed to SendWithAck to verify that any acknowledgement we hear is valid.
@@ -82,8 +82,8 @@ void SendAckForRound(udp::ClientPtr client, unsigned int round) {
   client->Send(buf, sizeof(ack));
 }
 
-UdpClientMap ClientsForProcessList(const ProcessList processes) {
-  UdpClientMap clients;
+UdpClientMap ClientsForProcessList(const ProcessList& processes) {
+  UdpClientMap clients(processes.size());
   for (auto const& addr : processes) {
     clients.emplace(addr, std::make_shared<udp::Client>(addr, kAckTimeout));
   }
@@ -275,7 +275,7 @@ void Lieutenant::InitNewRound() {
       if (!inMsg) {
         if (ShouldSendMsg()) {
           logging::out << "Sending  " << msg << " to p" << pid << "\n";
-          toSend.at(pid).push_back(msg);
+          toSend[pid].push_back(msg);
         }
       }
     }
