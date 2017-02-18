@@ -82,6 +82,15 @@ void SendAckForRound(udp::ClientPtr client, unsigned int round) {
   client->Send(buf, sizeof(ack));
 }
 
+std::unordered_map<net::Address, udp::ClientPtr> ClientsForProcessList(
+    const ProcessList processes) {
+  std::unordered_map<net::Address, udp::ClientPtr> clients;
+  for (auto const& addr : processes) {
+    clients.emplace(addr, std::make_shared<udp::Client>(addr, kAckTimeout));
+  }
+  return clients;
+}
+
 msg::Order Commander::Decide() {
   // Send in parallel so that some Lieutenants don't end up far ahead of others.
   ThreadGroup senders;
@@ -89,7 +98,7 @@ msg::Order Commander::Decide() {
   for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
     logging::out << "Sending  " << msg << " to p" << pid << "\n";
 
-    udp::ClientPtr client = clients_[processes_[pid]];
+    udp::ClientPtr client = clients_.at(processes_[pid]);
     senders.AddThread([client, msg] { SendMessage(client, msg); });
   }
   senders.JoinAll();
@@ -161,7 +170,14 @@ udp::ServerAction Lieutenant::MoveToNewRoundOrStop() {
 }
 
 udp::ServerAction Lieutenant::ContinueUnlessTimeout() {
-  // TODO check round timeout
+  // Compute the duration between the start of the round and now.
+  const auto now = std::chrono::steady_clock::now();
+  const auto round_dur = std::chrono::duration_cast<std::chrono::microseconds>(
+      now - round_start_ts_);
+
+  if (round_dur > kRoundTimeout) {
+    HandleRoundTimeout();
+  }
   return udp::ServerAction::Continue;
 }
 
@@ -214,13 +230,15 @@ void Lieutenant::InitNewRound() {
       // Send each message to process serially.
       auto pid = batch.first;
       for (auto const& msg : batch.second) {
-        SendMessage(clients_[processes_[pid]], msg);
+        SendMessage(clients_.at(processes_[pid]), msg);
       }
     });
   }
 
+  // Clear round-specific containers and reset round start timestamp.
   ids_this_round_.clear();
   msgs_this_round_.clear();
+  round_start_ts_ = std::chrono::steady_clock::now();
 }
 
 bool Lieutenant::ValidMessage(const msg::Message& msg,

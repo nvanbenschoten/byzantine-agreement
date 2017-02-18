@@ -10,11 +10,13 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
 
+#include "log.h"
 #include "net.h"
 #include "net_exception.h"
 
@@ -25,7 +27,7 @@ namespace udp {
 typedef int Socket;
 
 // Creates a new socket with the provided timeout.
-Socket CreateSocket(struct timeval timeout);
+Socket CreateSocket(const std::chrono::microseconds timeout);
 
 // Determines if the current error was a result of a timeout.
 inline bool IsErrnoTimeout();
@@ -60,14 +62,16 @@ enum class ServerAction {
 typedef std::function<ServerAction(ClientPtr, char*, size_t)> OnReceiveFn;
 typedef std::function<ServerAction()> OnTimeout;
 
+const auto kNoTimeout = std::chrono::microseconds{0};
+
 // Provides an interface to send UDP messages to a remote server.
 class Client : public std::enable_shared_from_this<Client> {
  public:
-  Client(net::Address addr, struct timeval timeout = {0, 0})
+  Client(net::Address addr, std::chrono::microseconds timeout = kNoTimeout)
       : sockfd_(CreateSocket(timeout)), remote_address_(addr){};
 
   Client(struct sockaddr_in sockaddr)
-      : sockfd_(CreateSocket({0, 0})), remote_address_(sockaddr){};
+      : sockfd_(CreateSocket(kNoTimeout)), remote_address_(sockaddr){};
 
   ~Client() { close(sockfd_); };
 
@@ -97,7 +101,7 @@ class Client : public std::enable_shared_from_this<Client> {
 // Listens for incoming UDP messages.
 class Server {
  public:
-  Server(unsigned short port, struct timeval timeout = {0, 0});
+  Server(unsigned short port, std::chrono::microseconds timeout = kNoTimeout);
 
   ~Server() { close(sockfd_); };
 

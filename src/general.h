@@ -1,6 +1,7 @@
 #ifndef GENERAL_H_
 #define GENERAL_H_
 
+#include <chrono>
 #include <exception>
 #include <experimental/optional>
 #include <memory>
@@ -17,11 +18,8 @@
 
 namespace generals {
 
-// Holds a list of processes participating in the agreement algorithm.
-typedef std::vector<net::Address> ProcessList;
-
-const struct timeval kAckTimeout = {0, 250000};
-const struct timeval kRoundTimeout = {1, 000000};
+const auto kAckTimeout = std::chrono::milliseconds{250};
+const auto kRoundTimeout = std::chrono::seconds{1};
 const unsigned int kSendAttempts = 3;
 
 // Determines the maximum number of valid messages that a Lieutenant process
@@ -45,26 +43,36 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg);
 // Sends an acknowledgement for the provided round to the client.
 void SendAckForRound(udp::ClientPtr client, unsigned int round);
 
-// TODO
+// Holds a list of processes participating in the agreement algorithm.
+typedef std::vector<net::Address> ProcessList;
+
+// Creates a mapping from network addresses to UDP clients, populated with each
+// process provided.
+std::unordered_map<net::Address, udp::ClientPtr> ClientsForProcessList(
+    const ProcessList processes);
+
+// A abstract representation of a general process in the Byzantine Agreement
+// Algorithm. Extended by the Commander and Lieutenant classes.
 class General {
  public:
   General(const ProcessList processes, unsigned int id, unsigned int faulty)
-      : processes_(processes), id_(id), faulty_(faulty), round_(0) {
-    for (auto const& addr : processes_) {
-      clients_.emplace(addr, std::make_shared<udp::Client>(addr, kAckTimeout));
-    }
-  }
+      : processes_(processes),
+        clients_(ClientsForProcessList(processes)),
+        id_(id),
+        faulty_(faulty),
+        round_(0) {}
 
   virtual ~General() = default;
 
+  // Runs the Byzantine Agreement Algorithm and decides on an order by
+  // coordinating with peer processes.
   virtual msg::Order Decide() = 0;
 
  protected:
   const ProcessList processes_;
+  const std::unordered_map<net::Address, udp::ClientPtr> clients_;
   const unsigned int id_;
   const unsigned int faulty_;
-
-  std::unordered_map<net::Address, udp::ClientPtr> clients_;
 
   unsigned int round_;
   // Determines if this is the first round of the algorithm.
@@ -78,7 +86,7 @@ class General {
   };
 };
 
-// TODO
+// A representation of a commander process in the Byzantine Agreement Algorithm.
 class Commander : public General {
  public:
   Commander(const ProcessList processes, unsigned int faulty, msg::Order order)
@@ -90,7 +98,8 @@ class Commander : public General {
   msg::Order order_;
 };
 
-// TODO
+// A representation of a lieutenant process in the Byzantine Agreement
+// Algorithm.
 class Lieutenant : public General {
  public:
   Lieutenant(const ProcessList processes, unsigned int id,
@@ -114,7 +123,13 @@ class Lieutenant : public General {
   //
   inline msg::Order DecideOrder() const;
 
-  // Round-variables:
+  // Per-round variables:
+
+  // Timestamp at the begining of the round, used as a backup round timeout
+  // because socket timeouts alone are not sufficient (see
+  // ContinueUnlessTimeout). steady_clock (monotonic) to measure elapsed time
+  // accurately even in the face of clock resets.
+  std::chrono::steady_clock::time_point round_start_ts_;
   // Contains the set of all unique messages received so far this round.
   std::set<msg::Message> msgs_this_round_;
   // Same as msgs_this_round_, except with only the ids so that all messages
@@ -127,7 +142,7 @@ class Lieutenant : public General {
   // received.
   inline bool RoundComplete() const;
 
-  // TODO
+  // Handles moving to the next round, unless this is as already the last round.
   udp::ServerAction MoveToNewRoundOrStop();
   // Checks if the round has timed out and returns an action accordingly. If the
   // round has not yet timed out, the server will be told to continue. We need
@@ -135,7 +150,7 @@ class Lieutenant : public General {
   // continue to send messages to reset the socket timeout without ever actually
   // making forward progress.
   udp::ServerAction ContinueUnlessTimeout();
-  //
+  // Handles a round timeout, moving to the next round if necessary.
   udp::ServerAction HandleRoundTimeout();
 
   // Waits for all sender threads to drain and terminate before clearing the

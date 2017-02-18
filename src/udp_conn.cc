@@ -3,7 +3,7 @@
 namespace udp {
 
 // Creates a UDP socket or throws an exception on error.
-Socket CreateSocket(struct timeval timeout) {
+Socket CreateSocket(const std::chrono::microseconds timeout) {
   // Create the socket.
   Socket sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {
@@ -18,9 +18,15 @@ Socket CreateSocket(struct timeval timeout) {
   }
 
   // Set socket timeout if provided.
-  if (timeout.tv_sec != 0 || timeout.tv_usec != 0) {
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-                   sizeof(struct timeval))) {
+  if (timeout.count() > 0) {
+    // Truncate to integer number of seconds.
+    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(timeout);
+
+    struct timeval timeval;
+    timeval.tv_sec = secs.count();
+    timeval.tv_usec = (timeout - secs).count();
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeval,
+                   sizeof(timeval))) {
       throw net::SocketException();
     }
   }
@@ -106,7 +112,7 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
   }
 }
 
-Server::Server(unsigned short port, struct timeval timeout)
+Server::Server(unsigned short port, std::chrono::microseconds timeout)
     : sockfd_(CreateSocket(timeout)) {
   // Create a socket and associate the it with the port
   struct sockaddr_in server_address = {};
