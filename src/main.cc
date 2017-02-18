@@ -45,10 +45,11 @@ const std::string order_desc =
     "Otherwise, the process will be a lieutenant.";
 const std::string id_desc =
     "The optional id specifier of this process. Only needed if multiple "
-    "processes in the hostfile are running on the same host. 0-indexed.";
+    "processes in the hostfile are running on the same host, otherwise it can "
+    "be deduced from the hostfile. 0-indexed.";
 const std::string verbose_desc = "Sets the logging level to verbose.";
 
-// gets the processed.
+// Gets the process list from the hostfile.
 generals::ProcessList GetProcesses(
     const std::string hostfile,
     std::experimental::optional<unsigned short> default_port) {
@@ -70,28 +71,28 @@ generals::ProcessList GetProcesses(
   return processes;
 }
 
-// checks if the --id flag is within the process list and pointing to
+// Checks if the --id flag is within the process list and pointing to
 // our hostname.
 void CheckProcessId(const generals::ProcessList& processes, int my_id) {
-  // check if the id is within bounds.
+  // Check if the id is within bounds.
   if (my_id < 0 || (uint)my_id >= processes.size()) {
     throw args::ValidationError("--id value not found in hostfile");
   }
 
-  // check if the process is on this host.
+  // Check if the process is on this host.
   if (processes[my_id].hostname() != net::GetHostname()) {
     throw args::ValidationError("--id value is not the hostname of this host");
   }
 }
 
-// gets the current process ID.
+// Gets the current process ID.
 int GetProcessId(const generals::ProcessList& processes) {
   int found = -1;
   auto hostname = net::GetHostname();
   for (std::size_t i = 0; i < processes.size(); ++i) {
     if (processes[i].hostname() == hostname) {
       if (found >= 0) {
-        // multiple processes are set to use our host.
+        // Multiple processes are set to use our host.
         throw args::UsageError(
             "when running multiple processes on the same host, use the --id "
             "flag");
@@ -100,34 +101,36 @@ int GetProcessId(const generals::ProcessList& processes) {
     }
   }
   if (found == -1) {
-    // our process is not in the file, throw an error
+    // Our process is not in the file, throw an error
     throw args::ValidationError("current hostname not found in hostfile");
   }
   return found;
 }
 
-// validate the commander_id flag.
+// Validate the commander_id flag. While doing so, moves the commander to the
+// first entry in the ProcessList.
 void ValidateCommanderId(generals::ProcessList& processes, int commander_id) {
-  // make sure the commander_id is valid
+  // Make sure the commander_id is valid
   if (commander_id < 0 || (size_t)commander_id >= processes.size()) {
     throw args::ValidationError("commander_id does not reference a process");
   }
-  // move the commander to the first element in the vector
+  // Move the commander to the first element in the vector
   std::iter_swap(processes.begin(), processes.begin() + commander_id);
 }
 
-// validate the fault flag.
+// Validate the fault flag.
 void ValidateFaultyCount(const generals::ProcessList& processes, int faulty) {
   if (faulty < 0) {
     throw args::ValidationError("faulty count must be non-negative");
   }
   if ((size_t)faulty * 3 + 1 > processes.size()) {
     throw args::ValidationError(
-        "3f+1 processes are needed to tolerate up to f faulty processes");
+        "the total number of processes must be no less than (faulty + 2)");
   }
 }
 
-// validate the order flag.
+// Validate the order flag. Returns a present Order if this process is the
+// commander, or an absent Order if it is not.
 std::experimental::optional<msg::Order> ValidateOrder(StringFlag& order,
                                                       bool is_commander) {
   if (is_commander) {
@@ -148,6 +151,11 @@ std::experimental::optional<msg::Order> ValidateOrder(StringFlag& order,
     }
     return {};
   }
+}
+
+// Prints the order that our process decided upon to stdout.
+void PrintOrder(int id, msg::Order decision) {
+  std::cout << id << ": Agreed on " << msg::OrderString(decision) << std::endl;
 }
 
 int main(int argc, const char** argv) {
@@ -181,9 +189,10 @@ int main(int argc, const char** argv) {
       default_port = args::get(port);
     }
 
-    // create the process list from the hostfile.
+    // Create the process list from the hostfile.
     auto processes = GetProcesses(hostfile_val, default_port);
 
+    // Determine the current process's ID.
     int my_id;
     if (id) {
       my_id = args::get(id);
@@ -199,6 +208,7 @@ int main(int argc, const char** argv) {
     bool is_commander = my_id == commander_id_val;
     auto order_val = ValidateOrder(order, is_commander);
 
+    // Create the General depending on it is the Commander or a Lieutenant.
     std::unique_ptr<generals::General> general;
     if (is_commander) {
       general = std::make_unique<generals::Commander>(processes, faulty_val,
@@ -207,10 +217,10 @@ int main(int argc, const char** argv) {
       general = std::make_unique<generals::Lieutenant>(processes, my_id,
                                                        server_port, faulty_val);
     }
-    msg::Order decision = general->Decide();
 
-    std::cout << my_id << ": Agreed on " << msg::OrderString(decision)
-              << std::endl;
+    // Run the algorithm by calling Decide() and print the results.
+    msg::Order decision = general->Decide();
+    PrintOrder(my_id, decision);
   } catch (args::Help) {
     std::cout << parser;
     return 0;

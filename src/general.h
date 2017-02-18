@@ -95,7 +95,7 @@ class Commander : public General {
   msg::Order Decide();
 
  private:
-  msg::Order order_;
+  const msg::Order order_;
 };
 
 // A representation of a lieutenant process in the Byzantine Agreement
