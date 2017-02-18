@@ -6,13 +6,13 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "log.h"
 #include "message.h"
 #include "net.h"
+#include "thread.h"
 #include "udp_conn.h"
 
 namespace generals {
@@ -24,20 +24,26 @@ const struct timeval kAckTimeout = {0, 250000};
 const struct timeval kRoundTimeout = {1, 000000};
 const unsigned int kSendAttempts = 3;
 
-// TODO
-size_t MessagesPerRound(size_t process_num, unsigned int round);
+// Determines the maximum number of valid messages that a Lieutenant process
+// should expect in a certain round given a number of initial processes.
+size_t MessagesForRound(size_t process_num, unsigned int round);
 
-// TODO
-void SendMessage(udp::ClientPtr client, const msg::Message& msg);
-// TODO
-void SendAckForRound(udp::ClientPtr client, unsigned int round);
-
-// TODO
+// Decodes a msg::Message from the provided buffer. If the decoding is
+// successful, the optional return value will be present. If not, the return
+// value will be absent.
 std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
                                                               size_t n);
 
-// TODO
+// Decodes a msg::Ack from the provided buffer and returns its round number. If
+// the decoding is successful, the optional return value will be present. If
+// not, the return value will be absent.
 std::experimental::optional<unsigned int> RoundOfAck(char* buf, size_t n);
+
+// Sends the message to the client.
+void SendMessage(udp::ClientPtr client, const msg::Message& msg);
+
+// Sends an acknowledgement for the provided round to the client.
+void SendAckForRound(udp::ClientPtr client, unsigned int round);
 
 // TODO
 class General {
@@ -61,8 +67,15 @@ class General {
   std::unordered_map<net::Address, udp::ClientPtr> clients_;
 
   unsigned int round_;
-
-  inline void IncrementRound() { round_++; };
+  // Determines if this is the first round of the algorithm.
+  inline bool FirstRound() const { return round_ == 0; }
+  // Determines if this is the last round of the algorithm.
+  inline bool LastRound() const { return round_ == faulty_ + 1; };
+  // Increments the round number.
+  inline void IncrementRound() {
+    round_++;
+    logging::out << "Moving to round " << round_ << "\n";
+  };
 };
 
 // TODO
@@ -89,28 +102,53 @@ class Lieutenant : public General {
  private:
   const udp::Server server_;
 
+  // The set of unique orders seen orders over the course of the agreement
+  // algorithm.
   std::set<msg::Order> orders_seen_;
+
+  // Decides what the order should be based on the seen orders over the course
+  // of the agreement algorithm. Defined as follows:
+  //
+  // choice(V) := v        if V = {v}
+  //            | RETREAT  if V = {} or |V| >= 2
+  //
+  inline msg::Order DecideOrder() const;
+
+  // Round-variables:
+  // Contains the set of all unique messages received so far this round.
   std::set<msg::Message> msgs_this_round_;
-  // Same as orders_last_round_, except with only the ids so that all messages
-  // from the same process colide.
+  // Same as msgs_this_round_, except with only the ids so that all messages
+  // with the same process list collide.
   std::set<std::vector<unsigned int>> ids_this_round_;
   // Holds the sender threads for the given round.
-  std::vector<std::thread> sender_threads_this_round_;
+  ThreadGroup sender_threads_this_round_;
 
+  // Decides if the current round is complete based on the number of messages
+  // received.
+  inline bool RoundComplete() const;
+
+  // TODO
+  udp::ServerAction MoveToNewRoundOrStop();
+  // Checks if the round has timed out and returns an action accordingly. If the
+  // round has not yet timed out, the server will be told to continue. We need
+  // both a round timeout and a socket timeout so that faulty processes cannot
+  // continue to send messages to reset the socket timeout without ever actually
+  // making forward progress.
+  udp::ServerAction ContinueUnlessTimeout();
+  //
+  udp::ServerAction HandleRoundTimeout();
+
+  // Waits for all sender threads to drain and terminate before clearing the
+  // sender_threads_this_round_ vector.
   void ClearSenders();
-  void BeginNewRound();
+  // Handles a new round by setting up per-round variables and launching threads
+  // (senders) to send round related messages.
+  void InitNewRound();
 
   // Validates that the message makes sense in the current context of the
   // algorithm and verifies that it is properly formatted. This protects against
   // malicious messages.
   bool ValidMessage(const msg::Message& msg, const net::Address& from) const;
-
-  // TODO
-  msg::Order DecideOrder() const;
-
-  // Decides if the current round is complete based on the number of messages
-  // received.
-  inline bool RoundComplete() const;
 };
 
 }  // namespace generals

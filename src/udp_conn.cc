@@ -28,6 +28,10 @@ Socket CreateSocket(struct timeval timeout) {
   return sockfd;
 }
 
+inline bool IsErrnoTimeout() {
+  return errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNREFUSED;
+}
+
 SocketAddress::SocketAddress(net::Address addr) {
   // Get the remote server's DNS entry.
   struct hostent *server = gethostbyname(addr.hostname().c_str());
@@ -87,9 +91,7 @@ void Client::SendWithAck(const char *buf, size_t size, unsigned int attempts,
     // networking error. For timeouts, try sending the message again. For
     // anything else, throw an exception.
     if (n < 0) {
-      bool isTimeout =
-          errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNREFUSED;
-      if (isTimeout) {
+      if (IsErrnoTimeout()) {
         continue;
       } else {
         throw net::ReceiveException();
@@ -132,9 +134,7 @@ void Server::Listen(OnReceiveFn rcv, OnTimeout timeout) const {
     int n = recvfrom(sockfd_, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr,
                      &clientlen);
     if (n < 0) {
-      bool isTimeout =
-          errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNREFUSED;
-      if (isTimeout) {
+      if (IsErrnoTimeout()) {
         auto action = timeout();
         switch (action) {
           case ServerAction::Continue:

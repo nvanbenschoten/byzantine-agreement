@@ -27,6 +27,9 @@ typedef int Socket;
 // Creates a new socket with the provided timeout.
 Socket CreateSocket(struct timeval timeout);
 
+// Determines if the current error was a result of a timeout.
+inline bool IsErrnoTimeout();
+
 // Wraps a C sockaddr_in with a number of useful functionality.
 class SocketAddress {
  public:

@@ -25,7 +25,7 @@ class SocketException : public AbstractNetworkException {
 class HostNotFoundException : public AbstractNetworkException {
  public:
   HostNotFoundException(std::string host) {
-    stream_ << "Could not find host " << host;
+    stream_ << "Could not find host: " << host;
   };
 };
 

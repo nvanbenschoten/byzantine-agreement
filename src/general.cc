@@ -2,9 +2,9 @@
 
 namespace generals {
 
-size_t MessagesPerRound(size_t process_num, unsigned int round) {
+size_t MessagesForRound(size_t process_num, unsigned int round) {
   if (round == 0) return 1;
-  return (process_num - 1 - round) * MessagesPerRound(process_num, round - 1);
+  return (process_num - 1 - round) * MessagesForRound(process_num, round - 1);
 }
 
 std::experimental::optional<msg::Message> ByzantineMsgFromBuf(char* buf,
@@ -53,12 +53,15 @@ void SendMessage(udp::ClientPtr client, const msg::Message& msg) {
   c_msg->order = htonl(static_cast<int>(msg.order));
 
   // C++ does not support flexible arrays, so we need to be a little tricky
-  // here.
+  // here. We already made sure the buffer was the correct size by adding space
+  // for each of the ids at the end of ByzantineMessage. Now we populate the
+  // array.
   uint32_t* id_buf = reinterpret_cast<uint32_t*>(buf + sizeof(*c_msg));
   for (size_t i = 0; i < msg.ids.size(); ++i) {
     id_buf[i] = htonl(msg.ids[i]);
   }
 
+  // Passed to SendWithAck to verify that any acknowledgement we hear is valid.
   auto isValidAck = [msg](udp::ClientPtr _, char* buf, size_t n) {
     auto ackRound = RoundOfAck(buf, n);
     bool valid = ackRound && *ackRound == msg.round;
@@ -80,22 +83,28 @@ void SendAckForRound(udp::ClientPtr client, unsigned int round) {
 }
 
 msg::Order Commander::Decide() {
+  // Send in parallel so that some Lieutenants don't end up far ahead of others.
+  ThreadGroup senders;
   msg::Message msg{round_, order_, std::vector<unsigned int>{0}};
   for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
     logging::out << "Sending  " << msg << " to p" << pid << "\n";
-    SendMessage(clients_[processes_[pid]], msg);
+
+    udp::ClientPtr client = clients_[processes_[pid]];
+    senders.AddThread([client, msg] { SendMessage(client, msg); });
   }
+  senders.JoinAll();
   return order_;
 }
 
 msg::Order Lieutenant::Decide() {
   server_.Listen(
+      // Called on all incoming Byzantine Messages.
       [this](udp::ClientPtr client, char* buf, size_t n) {
         auto from = client->RemoteAddress();
         auto msg = ByzantineMsgFromBuf(buf, n);
         if (!msg || !ValidMessage(*msg, from)) {
           // If the message was not valid, return without trying to use it.
-          return udp::ServerAction::Continue;
+          return ContinueUnlessTimeout();
         }
 
         logging::out << "Received " << *msg << " from p" << msg->ids.back()
@@ -103,7 +112,7 @@ msg::Order Lieutenant::Decide() {
         SendAckForRound(client, round_);
 
         bool newRound = false;
-        if (round_ == 0) {
+        if (FirstRound()) {
           // This check shouldn't be needed.
           if (orders_seen_.size() == 0) {
             orders_seen_.insert(msg->order);
@@ -120,42 +129,58 @@ msg::Order Lieutenant::Decide() {
         }
 
         if (newRound) {
-          if (round_ == faulty_ + 1) {
-            ClearSenders();
-            return udp::ServerAction::Stop;
-          } else {
-            BeginNewRound();
-          }
+          return MoveToNewRoundOrStop();
         }
-        return udp::ServerAction::Continue;
+        return ContinueUnlessTimeout();
       },
-      [this]() {
-        if (round_ == 0) {
-          // We can't timeout in the first round. Just continue.
-          return udp::ServerAction::Continue;
-        }
-
-        logging::out << "Timeout in round " << round_ << "\n";
-        if (round_ == faulty_ + 1) {
-          ClearSenders();
-          return udp::ServerAction::Stop;
-        } else {
-          BeginNewRound();
-          return udp::ServerAction::Continue;
-        }
-      });
+      // Called on socket timeout.
+      [this]() { return HandleRoundTimeout(); });
 
   return DecideOrder();
 }
 
-void Lieutenant::ClearSenders() {
-  for (auto& sender : sender_threads_this_round_) {
-    sender.join();
+inline msg::Order Lieutenant::DecideOrder() const {
+  if (orders_seen_.size() == 1 && orders_seen_.count(msg::Order::ATTACK) == 1) {
+    return msg::Order::ATTACK;
   }
-  sender_threads_this_round_.clear();
+  return msg::Order::RETREAT;
 }
 
-void Lieutenant::BeginNewRound() {
+inline bool Lieutenant::RoundComplete() const {
+  return ids_this_round_.size() == MessagesForRound(processes_.size(), round_);
+}
+
+udp::ServerAction Lieutenant::MoveToNewRoundOrStop() {
+  if (LastRound()) {
+    ClearSenders();
+    return udp::ServerAction::Stop;
+  } else {
+    InitNewRound();
+    return udp::ServerAction::Continue;
+  }
+}
+
+udp::ServerAction Lieutenant::ContinueUnlessTimeout() {
+  // TODO check round timeout
+  return udp::ServerAction::Continue;
+}
+
+udp::ServerAction Lieutenant::HandleRoundTimeout() {
+  if (FirstRound()) {
+    // We can't timeout in the first round. Just continue to wait.
+    return udp::ServerAction::Continue;
+  }
+
+  logging::out << "Timeout in round " << round_ << "\n";
+  return MoveToNewRoundOrStop();
+}
+
+void Lieutenant::ClearSenders() {
+  sender_threads_this_round_.JoinAll();
+  sender_threads_this_round_.Clear();
+}
+
+void Lieutenant::InitNewRound() {
   ClearSenders();
   IncrementRound();
 
@@ -185,13 +210,13 @@ void Lieutenant::BeginNewRound() {
   }
 
   for (auto const& batch : toSend) {
-    sender_threads_this_round_.push_back(std::thread([this, batch] {
+    sender_threads_this_round_.AddThread([this, batch] {
       // Send each message to process serially.
       auto pid = batch.first;
       for (auto const& msg : batch.second) {
         SendMessage(clients_[processes_[pid]], msg);
       }
-    }));
+    });
   }
 
   ids_this_round_.clear();
@@ -235,17 +260,6 @@ bool Lieutenant::ValidMessage(const msg::Message& msg,
     return false;
   }
   return true;
-}
-
-msg::Order Lieutenant::DecideOrder() const {
-  if (orders_seen_.size() == 1 && orders_seen_.count(msg::Order::ATTACK) == 1) {
-    return msg::Order::ATTACK;
-  }
-  return msg::Order::RETREAT;
-}
-
-inline bool Lieutenant::RoundComplete() const {
-  return ids_this_round_.size() == MessagesPerRound(processes_.size(), round_);
 }
 
 }  // namespace generals

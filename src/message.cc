@@ -30,7 +30,8 @@ bool operator<(const Message& lhs, const Message& rhs) {
 }
 
 std::ostream& operator<<(std::ostream& o, const Message& m) {
-  o << "{id: " << m.round << ", order: " << OrderString(m.order) << ", ids: <";
+  o << "{round: " << m.round << ", order: " << OrderString(m.order)
+    << ", ids: <";
   for (size_t i = 0; i < m.ids.size(); ++i) {
     if (i > 0) o << ' ';
     o << m.ids[i];
