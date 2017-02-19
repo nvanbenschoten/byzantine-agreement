@@ -90,6 +90,8 @@ inline bool Exhibits(MaliciousBehavior b, MaliciousBehavior test) {
 // Maps a string to a MaliciousBehavior, throwing an exception if the string is
 // invalid.
 MaliciousBehavior StringToMaliciousBehavior(std::string str);
+// Returns the string representation of the provided MaliciousBehavior.
+std::string MaliciousBehaviorString(MaliciousBehavior m);
 
 // A abstract representation of a general process in the Byzantine Agreement
 // Algorithm. Extended by the Commander and Lieutenant classes.

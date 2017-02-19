@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -53,9 +54,9 @@ const std::string order_desc =
 const std::string malicious_desc =
     "A list of malicious behaviors that the process can exhibit. Multiple "
     "behaviors can be provided by repeating the flag. Options:\n"
-    "-\"silent\": send no messages\n"
+    "-\"silent\": send no messages (lieutenants only)\n"
     "-\"delay_send\": delays the send of messages\n"
-    "-\"partial_send\": occasionally drop messages\n"
+    "-\"partial_send\": occasionally drop messages (lieutenants only)\n"
     "-\"wrong_order\": occasionally send the wrong order (commander only)\n";
 const std::string id_desc =
     "The optional id specifier of this process. Only needed if multiple "
@@ -173,24 +174,47 @@ std::experimental::optional<msg::Order> ValidateOrder(StringFlag& order,
   }
 }
 
+const auto only_lieutenant_behavior = std::set<generals::MaliciousBehavior>{
+    generals::MaliciousBehavior::SILENT,
+    generals::MaliciousBehavior::PARTIAL_SEND,
+};
+const auto only_commander_behavior = std::set<generals::MaliciousBehavior>{
+    generals::MaliciousBehavior::WRONG_ORDER,
+};
+
 // Determine which malicious behavior this process will exhibit.
 generals::MaliciousBehavior GetMaliciousBehavior(StringFlagList& malicious,
                                                  bool is_commander) {
+  // Create the MaliciousBehavior instance.
+  generals::MaliciousBehavior b = generals::MaliciousBehavior::NONE;
   try {
-    generals::MaliciousBehavior b = generals::MaliciousBehavior::NONE;
     for (const auto mal : args::get(malicious)) {
       b |= generals::StringToMaliciousBehavior(mal);
     }
-    if (!is_commander &&
-        generals::Exhibits(b, generals::MaliciousBehavior::WRONG_ORDER)) {
-      throw args::ValidationError(
-          "only the commander process can have the malicious behavior "
-          "\"wrong_order\"");
-    }
-    return b;
   } catch (std::invalid_argument e) {
     throw args::ValidationError(e.what());
   }
+
+  // Validate that the malicious behavior is valid for the general type.
+  if (is_commander) {
+    for (auto const& not_avail : only_lieutenant_behavior) {
+      if (generals::Exhibits(b, not_avail)) {
+        throw args::ValidationError(
+            "only a lieutenant can have the malicious behavior \"" +
+            generals::MaliciousBehaviorString(not_avail) + "\"");
+      }
+    }
+  } else {
+    for (auto const& not_avail : only_commander_behavior) {
+      if (generals::Exhibits(b, not_avail)) {
+        throw args::ValidationError(
+            "only a commander can have the malicious behavior \"" +
+            generals::MaliciousBehaviorString(not_avail) + "\"");
+      }
+    }
+  }
+
+  return b;
 }
 
 // Prints the order that our process decided upon to stdout.

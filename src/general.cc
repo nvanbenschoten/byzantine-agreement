@@ -100,6 +100,21 @@ MaliciousBehavior StringToMaliciousBehavior(std::string str) {
       "\"partial_send\", \"wrong_order\"}");
 }
 
+std::string MaliciousBehaviorString(MaliciousBehavior m) {
+  switch (m) {
+    case MaliciousBehavior::SILENT:
+      return "silent";
+    case MaliciousBehavior::DELAY_SEND:
+      return "delay_send";
+    case MaliciousBehavior::PARTIAL_SEND:
+      return "partial_send";
+    case MaliciousBehavior::WRONG_ORDER:
+      return "wrong_order";
+    default:
+      throw std::invalid_argument("unexpected MaliciousBehavior value");
+  }
+}
+
 bool General::ShouldSendMsg() {
   if (ExhibitsBehavior(MaliciousBehavior::SILENT)) {
     return false;
