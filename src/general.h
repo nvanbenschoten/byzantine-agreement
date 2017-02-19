@@ -57,7 +57,8 @@ typedef std::unordered_map<net::Address, udp::ClientPtr, net::AHash>
 UdpClientMap ClientsForProcessList(const ProcessList& processes);
 
 // Represents different types of malicious behavior a traitorous general can
-// exhibit.
+// exhibit. Individual instances are stored as bit flags by combining individual
+// behaviors using bitwise OR operations.
 enum class MaliciousBehavior {
   NONE = 0,
   SILENT = 1 << 0,
@@ -80,6 +81,8 @@ inline MaliciousBehavior& operator&=(MaliciousBehavior& a,
                                      MaliciousBehavior b) {
   return (MaliciousBehavior&)((int&)a &= (int)b);
 }
+// Determines if a malicious behavior instance exhibits a specific type of
+// MaliciousBehavior. Does so using a bitmask.
 inline bool Exhibits(MaliciousBehavior b, MaliciousBehavior test) {
   return (b & test) != MaliciousBehavior::NONE;
 }
@@ -114,6 +117,11 @@ class General {
   const unsigned int faulty_;
   const MaliciousBehavior behavior_;
 
+  // Returns the UDP client for a given process ID.
+  inline udp::ClientPtr ClientForId(unsigned int pid) const {
+    return clients_.at(processes_.at(pid));
+  }
+
   // Determines if the current General exhibits the provided behavior.
   inline bool ExhibitsBehavior(MaliciousBehavior test) const {
     return Exhibits(behavior_, test);
@@ -122,7 +130,7 @@ class General {
   // malicious behavior.
   bool ShouldSendMsg();
   // Possibly delay the send of a message, based on the General's malicious
-  // behavior.
+  // behavior. Blocks synchonously if delaying.
   void MaybeDelaySend();
 
   unsigned int round_;
@@ -149,6 +157,8 @@ class Commander : public General {
  private:
   const msg::Order order_;
 
+  // Determins the order a Commander should send for a certain message, based on
+  // the Commander's malicious behavior.
   msg::Order OrderForMsg() const;
 };
 
@@ -198,8 +208,6 @@ class Lieutenant : public General {
   // received.
   inline bool RoundComplete() const;
 
-  // Handles moving to the next round, unless this is as already the last round.
-  udp::ServerAction MoveToNewRoundOrStop();
   // Checks if the round has timed out and returns an action accordingly. If the
   // round has not yet timed out, the server will be told to continue. We need
   // both a round timeout and a socket timeout so that faulty processes cannot
@@ -208,6 +216,8 @@ class Lieutenant : public General {
   udp::ServerAction ContinueUnlessTimeout();
   // Handles a round timeout, moving to the next round if necessary.
   udp::ServerAction HandleRoundTimeout();
+  // Handles moving to the next round, unless this is as already the last round.
+  udp::ServerAction MoveToNewRoundOrStop();
 
   // Waits for all sender threads to drain and terminate before clearing the
   // sender_threads_this_round_ vector.

@@ -32,7 +32,7 @@ Socket CreateSocket(const std::chrono::microseconds timeout);
 // Determines if the current error was a result of a timeout.
 inline bool IsErrnoTimeout();
 
-// Wraps a C sockaddr_in with a number of useful functionality.
+// Wraps a C sockaddr_in with a group of useful functionality.
 class SocketAddress {
  public:
   SocketAddress(struct sockaddr_in sockaddr) : addr_(sockaddr){};

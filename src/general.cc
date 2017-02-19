@@ -149,7 +149,7 @@ msg::Order Commander::Decide() {
       msg::Message msg{round_, OrderForMsg(), ids};
       logging::out << "Sending  " << msg << " to p" << pid << "\n";
 
-      udp::ClientPtr client = clients_.at(processes_.at(pid));
+      udp::ClientPtr client = ClientForId(pid);
       senders.AddThread([this, client, msg] {
         MaybeDelaySend();
         SendMessage(client, msg);
@@ -192,15 +192,19 @@ msg::Order Lieutenant::Decide() {
 
         bool newRound = false;
         if (FirstRound()) {
-          // This check shouldn't be needed.
+          // Only handle the first real order.
           if (msg->order != msg::Order::NO_ORDER && orders_seen_.size() == 0) {
             orders_seen_.insert(msg->order);
             msgs_this_round_.insert(*msg);
             newRound = true;
           }
         } else {
+          // Handle if not a replay of a previous message (msg with same ids).
           if (ids_this_round_.count(msg->ids) == 0) {
             ids_this_round_.insert(msg->ids);
+
+            // Handle the order in the message based on if we've seen the same
+            // order or not.
             if (msg->order != msg::Order::NO_ORDER &&
                 orders_seen_.count(msg->order) == 0) {
               // We have not seen this order yet, so we add it to the
@@ -211,7 +215,11 @@ msg::Order Lieutenant::Decide() {
               // instead next round.
               msg->order = msg::Order::NO_ORDER;
             }
+
+            // Record the message so we can forward it next round.
             msgs_this_round_.insert(*msg);
+
+            // Determine if this is the last message needed for the round.
             newRound = RoundComplete();
           }
         }
@@ -238,22 +246,13 @@ inline bool Lieutenant::RoundComplete() const {
   return ids_this_round_.size() == MessagesForRound(processes_.size(), round_);
 }
 
-udp::ServerAction Lieutenant::MoveToNewRoundOrStop() {
-  if (LastRound()) {
-    ClearSenders();
-    return udp::ServerAction::Stop;
-  } else {
-    InitNewRound();
-    return udp::ServerAction::Continue;
-  }
-}
-
 udp::ServerAction Lieutenant::ContinueUnlessTimeout() {
   // Compute the duration between the start of the round and now.
   const auto now = std::chrono::steady_clock::now();
   const auto round_dur = std::chrono::duration_cast<std::chrono::microseconds>(
       now - round_start_ts_);
 
+  // If this duration is more than the round timeout, handle the timeout.
   if (round_dur > kRoundTimeout) {
     HandleRoundTimeout();
   }
@@ -270,6 +269,15 @@ udp::ServerAction Lieutenant::HandleRoundTimeout() {
   return MoveToNewRoundOrStop();
 }
 
+udp::ServerAction Lieutenant::MoveToNewRoundOrStop() {
+  if (LastRound()) {
+    ClearSenders();
+    return udp::ServerAction::Stop;
+  }
+  InitNewRound();
+  return udp::ServerAction::Continue;
+}
+
 void Lieutenant::ClearSenders() {
   sender_threads_this_round_.JoinAll();
   sender_threads_this_round_.Clear();
@@ -279,6 +287,7 @@ void Lieutenant::InitNewRound() {
   ClearSenders();
   IncrementRound();
 
+  // Determine the set of messages to forward in the next round.
   std::unordered_map<unsigned int, std::vector<msg::Message>> toSend;
   for (msg::Message msg : msgs_this_round_) {
     if (msg.round != round_ - 1) {
@@ -286,8 +295,13 @@ void Lieutenant::InitNewRound() {
           "message in msgs_this_round_ not from current round");
     }
 
+    // Update the messages round number to the current round.
     msg.round = round_;
+
+    // Add this process in at the end of the message id list.
     msg.ids.push_back(id_);
+
+    // Determine which processes we need to send this message to.
     for (unsigned int pid = 0; pid < processes_.size(); ++pid) {
       // Only send to processes not already in this message.
       bool inMsg = false;
@@ -306,13 +320,15 @@ void Lieutenant::InitNewRound() {
     }
   }
 
+  // For each process that we have messages to send to...
   for (auto const& batch : toSend) {
     sender_threads_this_round_.AddThread([this, batch] {
-      // Send each message to process serially.
-      auto pid = batch.first;
+      // Send each message to the process serially in a new thread.
+      unsigned int pid = batch.first;
+      udp::ClientPtr client = ClientForId(pid);
       for (auto const& msg : batch.second) {
         MaybeDelaySend();
-        SendMessage(clients_.at(processes_.at(pid)), msg);
+        SendMessage(client, msg);
       }
     });
   }
@@ -325,8 +341,8 @@ void Lieutenant::InitNewRound() {
 
 bool Lieutenant::ValidMessage(const msg::Message& msg,
                               const net::Address& from) const {
-  // Invalid if the message is from a different round.
-  if (msg.round != round_) {
+  // Invalid if the message is from a later round.
+  if (msg.round > round_) {
     return false;
   }
   // Invalid if the message has an incorrect number of ids.
@@ -354,8 +370,8 @@ bool Lieutenant::ValidMessage(const msg::Message& msg,
     return false;
   }
   // Invalid if the last id does not match the sender. This check will not
-  // work for processes on the same host, because we can not know the sending
-  // port of the process, only its receiving port.
+  // be complete for processes on the same host, because we can not know the
+  // sending port of the process, only its receiving port.
   if (processes_.at(msg.ids.back()).hostname() != from.hostname()) {
     return false;
   }
