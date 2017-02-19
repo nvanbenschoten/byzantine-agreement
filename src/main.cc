@@ -16,17 +16,27 @@ const std::string program_desc =
 const std::string help_desc = "Display this help menu.";
 const std::string port_desc =
     "The port identifies on which port the process will be listening on for "
-    "incoming messages. It can take any integer from 1024 to 65535.";
+    "incoming messages. It can take any integer from 1024 to 65535. Can be "
+    "overridden by specifying a port on a host in the hostfile using "
+    "<hostname>:<port> notation. Not required if all hosts have specified "
+    "ports in the hostfile. Required otherwise.";
 const std::string hostfile_desc =
     "The hostfile is the path to a file that contains the list of hostnames "
-    "that the processes are running on. It assumes that each host is running "
-    "only one instance of the process. It should be in the following format.\n"
+    "that the processes are running on. It should be in the following format.\n"
     "`\n"
     "xinu01.cs.purdue.edu\n"
     "xinu02.cs.purdue.edu\n"
     "...\n"
     "`\n"
-    "All the processes will listen on the same port. "
+    "All the processes will listen on the port, specified by the port flag. "
+    "Alternatively, hosts can specify an alternate port using "
+    "<hostname>:<port> notation, like:\n"
+    "`\n"
+    "xinu01.cs.purdue.edu:1234\n"
+    "xinu01.cs.purdue.edu:1235\n"
+    "...\n"
+    "`\n"
+    "This makes it possible to run multiple processes on the same host. "
     "The line number indicates the identifier of the process.";
 const std::string faulty_desc =
     "The \"faulty\" specifies the total number of Byzantine processes in the "
@@ -45,12 +55,15 @@ const std::string malicious_desc =
     "behaviors can be provided by repeating the flag. Options:\n"
     "-\"silent\": send no messages\n"
     "-\"delay_send\": delays the send of messages\n"
-    "-\"partial_send\": occasionally drop messages\n";
+    "-\"partial_send\": occasionally drop messages\n"
+    "-\"wrong_order\": occasionally send the wrong order (commander only)\n";
 const std::string id_desc =
     "The optional id specifier of this process. Only needed if multiple "
     "processes in the hostfile are running on the same host, otherwise it can "
     "be deduced from the hostfile. 0-indexed.";
 const std::string verbose_desc = "Sets the logging level to verbose.";
+const std::string red_start = "\033[1;31m";
+const std::string red_end = "\033[0m";
 
 typedef args::ValueFlag<int> IntFlag;
 typedef args::ValueFlag<std::string> StringFlag;
@@ -130,7 +143,7 @@ void ValidateFaultyCount(const generals::ProcessList& processes, int faulty) {
   if (faulty < 0) {
     throw args::ValidationError("faulty count must be non-negative");
   }
-  if ((size_t)faulty * 3 + 1 > processes.size()) {
+  if ((size_t)faulty + 2 > processes.size()) {
     throw args::ValidationError(
         "the total number of processes must be no less than (faulty + 2)");
   }
@@ -161,13 +174,20 @@ std::experimental::optional<msg::Order> ValidateOrder(StringFlag& order,
 }
 
 // Determine which malicious behavior this process will exhibit.
-generals::MaliciousBehavior GetMaliciousBehavior(StringFlagList& malicious) {
+generals::MaliciousBehavior GetMaliciousBehavior(StringFlagList& malicious,
+                                                 bool is_commander) {
   try {
-    generals::MaliciousBehavior behavior = generals::MaliciousBehavior::NONE;
+    generals::MaliciousBehavior b = generals::MaliciousBehavior::NONE;
     for (const auto mal : args::get(malicious)) {
-      behavior |= generals::StringToMaliciousBehavior(mal);
+      b |= generals::StringToMaliciousBehavior(mal);
     }
-    return behavior;
+    if (!is_commander &&
+        generals::Exhibits(b, generals::MaliciousBehavior::WRONG_ORDER)) {
+      throw args::ValidationError(
+          "only the commander process can have the malicious behavior "
+          "\"wrong_order\"");
+    }
+    return b;
   } catch (std::invalid_argument e) {
     throw args::ValidationError(e.what());
   }
@@ -234,7 +254,8 @@ int main(int argc, const char** argv) {
     auto order_val = ValidateOrder(order, is_commander);
 
     // Determine which malicious behavior this process will exhibit.
-    generals::MaliciousBehavior behavior = GetMaliciousBehavior(malicious);
+    generals::MaliciousBehavior behavior =
+        GetMaliciousBehavior(malicious, is_commander);
 
     // Create the General depending on it is the Commander or a Lieutenant.
     std::unique_ptr<generals::General> general;
@@ -253,11 +274,11 @@ int main(int argc, const char** argv) {
     std::cout << parser;
     return 0;
   } catch (const args::UsageError& e) {
-    std::cerr << "\n  \033[1;31m" << e.what() << "\033[0m\n\n";
+    std::cerr << "\n  " << red_start << e.what() << red_end << "\n\n";
     std::cerr << parser;
     return 1;
   } catch (const std::exception& e) {
-    std::cerr << "\033[1;31m" << e.what() << "\033[0m\n";
+    std::cerr << red_start << e.what() << red_end << "\n";
     return 1;
   }
 }

@@ -63,7 +63,7 @@ enum class MaliciousBehavior {
   SILENT = 1 << 0,
   DELAY_SEND = 1 << 1,
   PARTIAL_SEND = 1 << 2,
-  // FLIP_ORDER = 1 << 3, Not supported.
+  WRONG_ORDER = 1 << 3,
 };
 
 inline MaliciousBehavior operator|(MaliciousBehavior a, MaliciousBehavior b) {
@@ -115,7 +115,7 @@ class General {
   const MaliciousBehavior behavior_;
 
   // Determines if the current General exhibits the provided behavior.
-  inline bool ExhibitsBehavior(MaliciousBehavior test) {
+  inline bool ExhibitsBehavior(MaliciousBehavior test) const {
     return Exhibits(behavior_, test);
   }
   // Determines if the General should send a certain message, based on its
@@ -148,6 +148,8 @@ class Commander : public General {
 
  private:
   const msg::Order order_;
+
+  msg::Order OrderForMsg() const;
 };
 
 // A representation of a lieutenant process in the Byzantine Agreement

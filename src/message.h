@@ -15,7 +15,7 @@ typedef struct {
   uint32_t type;   // Must be equal to 1
   uint32_t size;   // size of message in bytes
   uint32_t round;  // round number
-  uint32_t order;  // the order (retreat = 0 and attack = 1)
+  uint32_t order;  // the order (retreat = 0, attack = 1, no order = 2)
   uint32_t ids[];  // id’s of the senders of this message
 } ByzantineMessage;
 
@@ -28,6 +28,7 @@ typedef struct {
 enum class Order {
   RETREAT,
   ATTACK,
+  NO_ORDER,
 };
 
 // Maps a string to an Order, throwing an exception if the string is invalid.

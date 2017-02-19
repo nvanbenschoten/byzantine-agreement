@@ -94,10 +94,10 @@ MaliciousBehavior StringToMaliciousBehavior(std::string str) {
   if (str == "silent") return MaliciousBehavior::SILENT;
   if (str == "delay_send") return MaliciousBehavior::DELAY_SEND;
   if (str == "partial_send") return MaliciousBehavior::PARTIAL_SEND;
-  // if (str == "flip_order") return MaliciousBehavior::FLIP_ORDER;
+  if (str == "wrong_order") return MaliciousBehavior::WRONG_ORDER;
   throw std::invalid_argument(
       "malicious behavior can one of {\"silent\", \"delay_send\", "
-      "\"partial_send\"}");
+      "\"partial_send\", \"wrong_order\"}");
 }
 
 bool General::ShouldSendMsg() {
@@ -143,9 +143,10 @@ msg::Order Commander::Decide() {
   // Send in parallel so that some Lieutenants don't end up far ahead of
   // others.
   ThreadGroup senders;
-  msg::Message msg{round_, order_, std::vector<unsigned int>{0}};
+  auto ids = std::vector<unsigned int>{0};
   for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
     if (ShouldSendMsg()) {
+      msg::Message msg{round_, OrderForMsg(), ids};
       logging::out << "Sending  " << msg << " to p" << pid << "\n";
 
       udp::ClientPtr client = clients_.at(processes_.at(pid));
@@ -156,6 +157,21 @@ msg::Order Commander::Decide() {
     }
   }
   senders.JoinAll();
+  return order_;
+}
+
+msg::Order Commander::OrderForMsg() const {
+  if (ExhibitsBehavior(MaliciousBehavior::WRONG_ORDER)) {
+    // Send wrong order 30% of the time.
+    static thread_local std::default_random_engine random_engine(
+        std::chrono::system_clock::now().time_since_epoch().count());
+
+    std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    if (distribution(random_engine) < 0.30) {
+      return order_ == msg::Order::ATTACK ? msg::Order::RETREAT
+                                          : msg::Order::ATTACK;
+    }
+  }
   return order_;
 }
 
@@ -177,7 +193,7 @@ msg::Order Lieutenant::Decide() {
         bool newRound = false;
         if (FirstRound()) {
           // This check shouldn't be needed.
-          if (orders_seen_.size() == 0) {
+          if (msg->order != msg::Order::NO_ORDER && orders_seen_.size() == 0) {
             orders_seen_.insert(msg->order);
             msgs_this_round_.insert(*msg);
             newRound = true;
@@ -185,8 +201,17 @@ msg::Order Lieutenant::Decide() {
         } else {
           if (ids_this_round_.count(msg->ids) == 0) {
             ids_this_round_.insert(msg->ids);
+            if (msg->order != msg::Order::NO_ORDER &&
+                orders_seen_.count(msg->order) == 0) {
+              // We have not seen this order yet, so we add it to the
+              // orders_seen set and forward it in the next round.
+              orders_seen_.insert(msg->order);
+            } else {
+              // We have already seen this order, so we forward a no_order
+              // instead next round.
+              msg->order = msg::Order::NO_ORDER;
+            }
             msgs_this_round_.insert(*msg);
-            orders_seen_.insert(msg->order);
             newRound = RoundComplete();
           }
         }

@@ -14,6 +14,8 @@ std::string OrderString(Order o) {
       return "retreat";
     case Order::ATTACK:
       return "attack";
+    case Order::NO_ORDER:
+      return "no order";
     default:
       throw std::invalid_argument("unexpected Order value");
   }
