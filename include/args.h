@@ -783,7 +783,7 @@ class ArgumentParser : public Group {
   struct HelpParams {
     /** The width of the help menu
      */
-    unsigned int width = 80;
+    unsigned int width = 120;
     /** The indent of the program line
      */
     unsigned int progindent = 2;
