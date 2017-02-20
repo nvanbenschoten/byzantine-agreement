@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+namespace threadutil {
+
 // Holds references to a group of threads and exposes functionality to operate
 // on all of them at once.
 class ThreadGroup {
@@ -28,5 +30,7 @@ class ThreadGroup {
  private:
   std::vector<std::thread> threads_;
 };
+
+}  // namespace threadutil
 
 #endif

@@ -204,7 +204,7 @@ class Lieutenant : public General {
   // with the same process list collide.
   std::set<std::vector<unsigned int>> ids_this_round_;
   // Holds the sender threads for the given round.
-  ThreadGroup sender_threads_this_round_;
+  threadutil::ThreadGroup sender_threads_this_round_;
 
   // Decides if the current round is complete based on the number of messages
   // received.

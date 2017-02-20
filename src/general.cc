@@ -157,7 +157,7 @@ void General::MaybeDelaySend() {
 msg::Order Commander::Decide() {
   // Send in parallel so that some Lieutenants don't end up far ahead of
   // others.
-  ThreadGroup senders;
+  threadutil::ThreadGroup senders;
   auto ids = std::vector<unsigned int>{0};
   for (unsigned int pid = 1; pid < processes_.size(); ++pid) {
     if (ShouldSendMsg()) {
